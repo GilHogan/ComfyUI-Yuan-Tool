@@ -111,7 +111,7 @@ app.registerExtension({
                     if (resp.status === 200) {
                         const data = await resp.json();
                         let name = data.name;
-                        if (data.subfolder) name = data.subfolder + "/" + name; // 修复：带上子目录
+                        if (data.subfolder) name = data.subfolder + "/" + name; // 有子目录时拼回完整路径
                         const audioWidget = node.widgets && node.widgets.find(w => w.name === "音频");
                         if (audioWidget) {
                             // 手动上传后总是重置裁剪区间
@@ -169,7 +169,7 @@ app.registerExtension({
                 transition: "background 0.2s"
             });
 
-            // 上传按钮：点击弹出文件选择，复用 handleFileUpload
+            // 上传按钮：点击弹出文件选择框
             const fileInput = document.createElement("input");
             fileInput.type = "file";
             fileInput.accept = "audio/*,video/*," + AUDIO_EXTS.join(",");
@@ -253,7 +253,6 @@ app.registerExtension({
             timeInputWrap.appendChild(timeGap);
             timeInputWrap.appendChild(durationBox);
 
-            // 顶栏：左侧上传按钮，右侧时间输入框
             const playerTop = document.createElement("div");
             Object.assign(playerTop.style, {
                 display: "flex",
@@ -429,7 +428,6 @@ app.registerExtension({
                 }
             })();
 
-            // 把容器挂到节点 UI 上
             node.domWidget = node.addDOMWidget("audio_ui", "yuan_audio_ui", container);
 
             // 同步 DOM 宽度到节点宽度（仅 V2；V3 由布局系统管理宽度）
@@ -889,7 +887,7 @@ app.registerExtension({
                         if (startWidget) startWidget.value = parseFloat(Math.min(n, duration).toFixed(2));
                         if (endWidget && newEnd !== e) endWidget.value = parseFloat(newEnd.toFixed(2));
                     } else {
-                        // end
+                        // 结束时间：仅更新结束值
                         if (n <= s || n > duration) { syncTimeInputs(); return; }
                         if (endWidget) endWidget.value = parseFloat(n.toFixed(2));
                     }
@@ -1002,7 +1000,6 @@ app.registerExtension({
                         let newStart = val - dragOffset;
                         let newEnd = newStart + dragSelectionWidth;
 
-                        // 边界钳制
                         if (newStart < 0) {
                             newStart = 0;
                             newEnd = dragSelectionWidth;

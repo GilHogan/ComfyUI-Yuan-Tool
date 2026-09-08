@@ -1,8 +1,6 @@
 import { app } from "../../../scripts/app.js";
 
-/**
- * 文本处理节点：确保 widget 名称与后端汉化名称（"输入端口"/"输出段落"）严格匹配。
- */
+/** 文本处理节点：确保 widget 名称与后端汉化名称（"输入端口"/"输出段落"）严格匹配。 */
 app.registerExtension({
     name: "YuanTool.TXTParagraphSplitter",
     async beforeRegisterNodeDef(nodeType, nodeData) {
@@ -35,7 +33,7 @@ app.registerExtension({
                 }
             };
 
-            // 4. 更新输入端口 (any_X) - 匹配汉化名称 "输入端口"
+            // 4. 更新动态输入端口 (any_X)，数量取「输入端口」widget 值
             nodeType.prototype.updateInputPorts = function(doResize = false) {
                 if (!this.widgets) return;
                 
@@ -45,19 +43,17 @@ app.registerExtension({
                 const updateFn = () => {
                     const targetCount = Math.max(1, inputCountWidget.value);
                     this.inputs = this.inputs || [];
-
-                    // 获取所有动态输入 (any_X)
                     let dynamicInputs = this.inputs.filter(i => i.name.startsWith("any_"));
                     let currentCount = dynamicInputs.length;
 
-                    // 保险：把已有 any_X 端口统一标记为 optional（避免历史节点/自动生成端口实心圆点）
+                    // 已有端口统一标 optional，避免实心圆点
                     for (const inp of dynamicInputs) {
                         if (!inp.extra) inp.extra = {};
                         inp.extra.optional = true;
                     }
 
                     if (targetCount > currentCount) {
-                        // 增加端口（optional:true 与后端 INPUT_TYPES.optional 对齐，显示为空心圆点）
+                        // 新增端口同样 optional（对齐后端 INPUT_TYPES.optional）
                         for (let i = currentCount + 1; i <= targetCount; i++) {
                             this.addInput("any_" + i, "*", { optional: true });
                         }
@@ -85,7 +81,7 @@ app.registerExtension({
                 }
             };
 
-            // 5. 更新输出端口 (段落X) - 匹配汉化名称 "输出段落"
+            // 5. 更新动态输出端口 (段落X)，数量取「输出段落」widget 值
             nodeType.prototype.updateOutputPorts = function(doResize = false) {
                 if (!this.widgets) return;
                 
@@ -96,11 +92,9 @@ app.registerExtension({
                     const targetCount = Math.max(0, outputCountWidget.value);
                     this.outputs = this.outputs || [];
                     
-                    // 确保基础输出始终存在 (汉化)
+                    // 基础输出始终存在
                     if (this.outputs.length < 1) this.addOutput("数", "INT");
                     if (this.outputs.length < 2) this.addOutput("总段", "STRING");
-
-                    // 获取所有动态输出 (段落X)
                     let dynamicOutputs = this.outputs.filter(o => o.name.startsWith("段落"));
                     let currentCount = dynamicOutputs.length;
 
@@ -136,12 +130,7 @@ app.registerExtension({
     }
 });
 
-
-// ==== 预览内容节点前端（复刻自 Yuan-TV 的 ShowText，扩展名与原版完全隔离） ====
-// 显示模式=预览：执行后把 ui.text 填入「文本」框并设为只读（不可编辑）
-// 显示模式=编辑：「文本」框可编辑，内容即为输出
-// 节点创建/加载/切换开关时，实时同步「文本」框的只读状态
-
+// ==== 预览内容节点（Yuan-TV ShowText 复刻）：预览模式回填结果至「文本」框并只读，编辑模式直接输出 ====
 const PREVIEW_MODE_WIDGET = "显示模式";
 const PREVIEW_TEXT_WIDGET = "文本";
 
@@ -173,7 +162,7 @@ app.registerExtension({
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
         if (nodeData.name !== "YUAN_TXTPreviewContent") return;
 
-        // 节点刚创建（widgets 已就绪）：立即应用只读，避免预览模式下默认文本可编辑
+        // 创建后 widgets 已就绪即应用只读，避免预览模式下默认文本可编辑
         const onNodeCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {
             onNodeCreated?.apply(this, arguments);
@@ -187,7 +176,7 @@ app.registerExtension({
             setupPreview(this);
         };
 
-        // 执行后：预览模式下把结果填入「文本」框并保持只读
+        // 执行后：预览模式把结果写入「文本」框
         const onExecuted = nodeType.prototype.onExecuted;
         nodeType.prototype.onExecuted = function (message) {
             onExecuted?.apply(this, arguments);

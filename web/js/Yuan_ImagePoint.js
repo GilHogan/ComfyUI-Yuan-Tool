@@ -11,16 +11,6 @@ const getRealURL = obj => {
     const url = `/view?filename=${encodeURIComponent(obj.filename)}&type=${obj.type}&subfolder=${obj.subfolder}&rand=${Math.random()}`
     return api ? api.apiURL(url) : url
 }
-const makeUUID = _ =>{
-  let dt = new Date().getTime()
-  const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = ((dt + Math.random() * 16) % 16) | 0
-    dt = Math.floor(dt / 16)
-    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16)
-  })
-  return uuid
-}
-
 app.registerExtension({
     name: "Comfy.Yuan.ImagePoint",
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
@@ -160,7 +150,6 @@ app.registerExtension({
                 this.canvasWidget = {
                     canvas: canvas,
                     ctx: ctx,
-                    container: container,
                     tracker: tracker,
                     slider: slider,
                     frameInfo: frameInfo,
@@ -168,8 +157,6 @@ app.registerExtension({
                     positivePoints: [],
                     negativePoints: [],
                     bboxes: [],
-                    hoverBBox: null,
-                    hoveredPoint: null,
                     mode: 'point', // 'point' | 'box'
                     history: [],
                     historyIndex: -1,
@@ -183,25 +170,20 @@ app.registerExtension({
                 };
 
                 // 作为 DOM widget 挂载
-                const widget = this.addDOMWidget("canvas", "points_editor", container, );
-                this.uuid = makeUUID();
-                // 保存 widget 引用供更新
-                this.canvasWidget.domWidget = widget;
+                const widget = this.addDOMWidget("canvas", "points_editor", container);
 
-                // 获取 info widget
+                // 从 info widget 恢复已保存的点/框/帧索引
                 const infoWidget = this.widgets.find(w=> w.name == 'info')
                 setTimeout(_=>{
                     if(infoWidget && infoWidget.value) {
                         try {
                             const info = JSON.parse(infoWidget.value);
-                            // 恢复正面/负面点
                             if (Array.isArray(info.positive_coords)) {
                                 this.canvasWidget.positivePoints = info.positive_coords;
                             }
                             if (Array.isArray(info.negative_coords)) {
                                 this.canvasWidget.negativePoints = info.negative_coords;
                             }
-                            // 恢复边界框
                             if (Array.isArray(info.bbox)) {
                                 this.canvasWidget.bboxes = info.bbox;
                             }
@@ -212,13 +194,11 @@ app.registerExtension({
                                 this.canvasWidget.frameInfo.innerText = `${info.frame_index + 1}/${this.canvasWidget.previewFrames.length}`;
                             }
                             this.redrawCanvas();
-                        } catch (e) {
-                            // 忽略解析错误
-                        }
+                        } catch (e) {}
                     }
                 },1)
 
-                // V3 (Nodes 2.0) 尺寸适配：告知布局系统 DOM widget 行的最小尺寸
+                // V3：告知布局系统该 DOM widget 行的最小尺寸
                 if (typeof widget.computeLayoutSize === "function") {
                     const prevCLS = widget.computeLayoutSize.bind(widget);
                     widget.computeLayoutSize = (targetNode) => {
@@ -237,9 +217,7 @@ app.registerExtension({
                     return [width, widgetHeight];
                 };
 
-                // V3 (Nodes 2.0) 尺寸适配：在 comfy-node 元素上同步节点最小尺寸。
-                // 缓存已应用元素+尺寸签名：未变化时直接跳过，避免每帧 DOM 向上遍历
-                // 与 removeProperty/setProperty 写入引发布局抖动（工作流切换闪动根源）
+                // V3：同步 comfy-node 元素最小尺寸；缓存签名未变则跳过，防每帧 DOM 写入造成布局抖动（工作流切换闪动根源）
                 let _v3AppliedEl = null;
                 let _v3AppliedSig = "";
                 const applyV3MinSize = () => {
@@ -328,7 +306,6 @@ app.registerExtension({
                     if (historyIndex < history.length - 1) {
                         this.canvasWidget.history = history.slice(0, historyIndex + 1);
                     }
-                    // 压入新状态
                     const state = {
                         positivePoints: JSON.parse(JSON.stringify(positivePoints)),
                         negativePoints: JSON.parse(JSON.stringify(negativePoints)),
@@ -604,27 +581,23 @@ app.registerExtension({
 
             // 辅助：重绘画布
             nodeType.prototype.redrawCanvas = function() {
-                const {canvas, ctx, image, positivePoints, negativePoints, bboxes, currentBox, selectedBox, hoveredPoint, mode} = this.canvasWidget;
+                const {canvas, ctx, image, positivePoints, negativePoints, bboxes, currentBox, selectedBox, mode} = this.canvasWidget;
 
-                // 清空
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-                // pointSize：随画布显示尺寸缩放（考虑缩放）
+                // pointSize：随画布显示尺寸缩放
                 let pointSize = Math.max(4, Math.min(canvas.width, canvas.height) * 0.016);
 
-                // 绘制图像
                 if (image) {
                     ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
                 } else {
+                    // 无图像：绘制占位提示
                     const desc = [
                         "从您自己的图像或视频开始",
                         "左键点击：添加正面点",
                         "右键点击：添加负面点",
                         "拖动框：添加边界框",
                     ]
-                    // 占位提示
-                    ctx.fillStyle = "transparent";
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
                     ctx.fillStyle = "#ddd";
                     ctx.font = "34px sans-serif";
                     ctx.textAlign = "center";
@@ -640,7 +613,6 @@ app.registerExtension({
                 ctx.lineWidth = 2;
                 for (const box of bboxes) {
                     ctx.strokeRect(box.x, box.y, box.w, box.h);
-                    // 半透明填充
                     ctx.fillStyle = "rgba(0, 0, 255, 0.1)";
                     ctx.fillRect(box.x, box.y, box.w, box.h);
                 }

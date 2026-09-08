@@ -174,7 +174,6 @@ import { getApi } from "./Yuan_Common.js";
             };
             container.appendChild(addTrackBtn);
 
-            // 隐藏的文件上传 input
             const fileInput = document.createElement("input");
             fileInput.type = "file";
             fileInput.multiple = true;
@@ -185,7 +184,7 @@ import { getApi } from "./Yuan_Common.js";
             // 当前活跃滑轨索引（用于文件上传目标）
             let activeTrackIndex = 0;
             fileInput.onchange = (e) => {
-                // 必须先将 FileList 转数组，避免异步迭代丢失文件（否则只能上传第一张）
+                // FileList 先转数组，防异步迭代丢文件（否则只传第一张）
                 const files = Array.from(e.target.files);
                 if (files.length > 0) {
                     handleFiles(files, activeTrackIndex);
@@ -210,8 +209,7 @@ import { getApi } from "./Yuan_Common.js";
                 setTimeout(() => clearInterval(hideInterval), 1000);
             }
 
-            // V3 (Nodes 2.0)：widget 与输入端口共存，
-            // 移除 tracks_data 的占位端口（避免节点被端口拉长）
+            // V3：widget 与输入端口共存，移除 tracks_data 占位端口防节点被拉长
             if (checkIsV3()) {
                 const slot = node.findInputSlot("tracks_data");
                 if (slot >= 0 && !node.inputs[slot].link) {
@@ -262,9 +260,7 @@ import { getApi } from "./Yuan_Common.js";
                 return slotNumber < tracks.length ? slotNumber : -1;
             }
 
-            /**
-             * 同步输出端口与 tracks 数组（严格 1:1 对应）
-             */
+            /** 同步输出端口与 tracks 数组（严格 1:1 对应） */
             function syncOutputs(deletedIndex) {
                 if (!node.outputs) return;
                 const targetLen = tracks.length;
@@ -274,7 +270,6 @@ import { getApi } from "./Yuan_Common.js";
                     node.removeOutput(deletedIndex);
                 }
 
-                // 增删差异：端口多于 tracks 时从末尾删，少于时从末尾加
                 while (node.outputs.length > targetLen) {
                     node.removeOutput(node.outputs.length - 1);
                 }
@@ -282,7 +277,6 @@ import { getApi } from "./Yuan_Common.js";
                     node.addOutput(tracks[node.outputs.length].name, "IMAGE");
                 }
 
-                // 同步所有端口名称和类型（重命名场景）
                 for (let i = 0; i < targetLen; i++) {
                     if (node.outputs[i]) {
                         node.outputs[i].name = tracks[i].name;
@@ -346,7 +340,6 @@ import { getApi } from "./Yuan_Common.js";
                 // 顶部工具栏：缩放按钮 + 文件名 + 关闭
                 const toolbar = document.createElement("div");
                 toolbar.className = "yuan-mi-preview-toolbar";
-
                 const zoomOutBtn = document.createElement("button");
                 zoomOutBtn.className = "yuan-mi-preview-btn";
                 zoomOutBtn.innerText = "−";
@@ -600,13 +593,11 @@ import { getApi } from "./Yuan_Common.js";
                     e.stopPropagation();
                     if (tracks.length <= 1) return;
                     tracks.splice(trackIndex, 1);
-                    // 精确删除对应 slot，让 LiteGraph 自动重映射后续连接
                     syncOutputs(trackIndex);
                     renderTracksUI();
                     serializeTracks();
                     updateLayout(true);
                 };
-                // 仅 1 个滑轨时禁用删除
                 deleteBtn.disabled = tracks.length <= 1;
                 deleteBtn.style.opacity = tracks.length <= 1 ? "0.4" : "1";
                 deleteBtn.style.cursor = tracks.length <= 1 ? "not-allowed" : "pointer";
@@ -734,7 +725,7 @@ import { getApi } from "./Yuan_Common.js";
 
                     item.addEventListener("contextmenu", (e) => e.stopPropagation());
 
-                    // 点击缩略图 → 原图预览（记录按下位置，区分拖拽）
+                    // 点击缩略图 → 原图预览（记录按下位置，用于区分拖拽）
                     let pressX = 0;
                     let pressY = 0;
                     item.addEventListener("mousedown", (e) => {
@@ -743,9 +734,8 @@ import { getApi } from "./Yuan_Common.js";
                         pressY = e.clientY;
                     });
                     item.addEventListener("click", (e) => {
-                        // 发生位移视为拖拽，不触发预览
+                        // 位移过大视为拖拽；点删除按钮时不触发预览
                         if (Math.abs(e.clientX - pressX) > 4 || Math.abs(e.clientY - pressY) > 4) return;
-                        // 点击删除按钮时不触发预览（双保险）
                         if (e.target === del || del.contains(e.target)) return;
                         e.stopPropagation();
                         openPreview(path);
@@ -800,7 +790,7 @@ import { getApi } from "./Yuan_Common.js";
                 });
             }
 
-            // --- 7. 文件上传 ---
+            // --- 8. 文件上传 ---
             async function handleFiles(files, trackIndex) {
                 if (trackIndex < 0 || trackIndex >= tracks.length) return;
                 const uploaded = [];
@@ -825,7 +815,7 @@ import { getApi } from "./Yuan_Common.js";
                 }
             }
 
-            // --- 8. 布局管理 ---
+            // --- 9. 布局管理 ---
             function getContainerHeight() {
                 return CONTAINER_PADDING * 2 + tracks.length * TRACK_TOTAL_HEIGHT + ADD_BTN_HEIGHT + 6;
             }
@@ -916,7 +906,7 @@ import { getApi } from "./Yuan_Common.js";
                 enforceV3CSS();
             };
 
-            // --- 9. 序列化 / 反序列化钩子 ---
+            // --- 10. 序列化 / 反序列化钩子 ---
             // tracks_data widget 由 ComfyUI 自动序列化/恢复，无需额外 onSerialize
             /** 防止 onConfigure/onAdded/setTimeout 三处初始化重复执行 */
             let uiInitialized = false;
@@ -939,22 +929,20 @@ import { getApi } from "./Yuan_Common.js";
             const origOnConfigure = node.onConfigure;
             node.onConfigure = function (info) {
                 const out = origOnConfigure ? origOnConfigure.apply(this, arguments) : undefined;
-                // 标记已配置，阻止 onAdded/初始化中的竞态 syncOutputs
+                // 标记已配置，防 onAdded/初始化竞态 syncOutputs
                 hasBeenConfigured = true;
 
-                // 同步恢复 tracks 数据（origOnConfigure 后 dataWidget.value 已从工作流恢复）
+                // 恢复 tracks（origOnConfigure 后 dataWidget.value 已从工作流恢复）
                 deserializeTracks();
                 if (tracks.length === 0) tracks = [createDefaultTrack()];
-
-                // 端口数量此时与 tracks 一致，仅同步名称不删端口
+                // 端口数与 tracks 已一致，仅同步名称不删端口
                 syncOutputs();
-
-                // 异步渲染 UI（等 DOM 就绪）
+                // DOM 就绪后再渲染 UI
                 requestAnimationFrame(ensureInitialized);
                 return out;
             };
 
-            // --- 10. 拖拽 / 粘贴 ---
+            // --- 11. 拖拽 / 粘贴 ---
             const origOnDragDrop = node.onDragDrop;
             node.onDragDrop = function (e) {
                 if (e.dataTransfer && e.dataTransfer.files) {
@@ -1008,8 +996,7 @@ import { getApi } from "./Yuan_Common.js";
                 if (origOnRemoved) origOnRemoved.apply(this, arguments);
             };
 
-            // --- 11. 初始化 ---
-            // 先尝试从 widget 恢复，否则创建默认滑轨
+            // --- 12. 初始化 ---
             if (dataWidget && dataWidget.value && dataWidget.value.trim()) {
                 deserializeTracks();
             } else {

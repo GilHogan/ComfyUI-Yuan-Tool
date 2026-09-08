@@ -1,7 +1,4 @@
-/**
- * Yuan Tool · Panorama 前端：为 YuanPanoramaPreview 提供自包含 WebGL 球面投影全景查看器。
- * 支持拖拽旋转、滚轮缩放、360°/180° 覆盖、图像与视频（mp4 批次）输入播放。
- */
+/** Yuan Tool · Panorama 前端：YuanPanoramaPreview 的自包含 WebGL 球面全景查看器（拖拽旋转、滚轮缩放、360°/180°、图像与 mp4 视频）。 */
 import { getApi, imageSourceFromCandidate, lookupNodeOutputEntry } from "./Yuan_Common.js";
 
 (function () {
@@ -31,9 +28,7 @@ import { getApi, imageSourceFromCandidate, lookupNodeOutputEntry } from "./Yuan_
     const SYNC_DEBOUNCE_MS = 150;    // 视图数据同步防抖
     const DPR_MAX = 1.5;             // 限制 DPR 以降低 GPU 负载
 
-    // ------------------------------------------------------------------ //
     // 小工具
-    // ------------------------------------------------------------------ //
     function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
     function wrapYaw(deg) {
@@ -48,7 +43,6 @@ import { getApi, imageSourceFromCandidate, lookupNodeOutputEntry } from "./Yuan_
         return v === "180" ? 180 : 360;
     }
 
-    // 从节点自身输出中找视频
     function getSelfVideoUrl(node) {
         const outputs = lookupNodeOutputEntry(app, node?.id);
         const groups = [
@@ -66,7 +60,6 @@ import { getApi, imageSourceFromCandidate, lookupNodeOutputEntry } from "./Yuan_
         return "";
     }
 
-    // 从节点自身输出或上游连接节点找图像
     function getLinkedImageUrl(node, imageInputName) {
         imageInputName = imageInputName || "ERP_image";
 
@@ -182,9 +175,7 @@ import { getApi, imageSourceFromCandidate, lookupNodeOutputEntry } from "./Yuan_
         return "";
     }
 
-    // ------------------------------------------------------------------ //
     // WebGL 渲染器（球面投影 raycasting）
-    // ------------------------------------------------------------------ //
     const VERT_SRC = `
         attribute vec2 aPos;
         varying vec2 vUv;
@@ -369,9 +360,7 @@ import { getApi, imageSourceFromCandidate, lookupNodeOutputEntry } from "./Yuan_
         }
     }
 
-    // ------------------------------------------------------------------ //
     // 预览运行时
-    // ------------------------------------------------------------------ //
     function isRenderableMediaReady(media) {
         if (!media) return false;
         if (media instanceof HTMLVideoElement) {
@@ -585,24 +574,20 @@ import { getApi, imageSourceFromCandidate, lookupNodeOutputEntry } from "./Yuan_
         }
 
         _syncViewData() {
-            // output_current_view widget 即可见开关：True=全景模式，False=裁剪模式
+            // output_current_view：True=全景模式（不写截图）；False=裁剪模式把当前画面截图写入 current_view_data（dataUrl 体积大，防抖同步避免持续重绘）
             const widget = this.node?.widgets?.find?.((w) => w?.name === "output_current_view");
             this.outputCurrentView = Boolean(widget?.value);
-            // 静默写入 current_view_data，避免大量 dataUrl 字符串引发持续重绘
             const dataWidget = this.node?.widgets?.find?.((w) => w?.name === "current_view_data");
             if (!dataWidget) return;
             const idx = this.node.widgets.indexOf(dataWidget);
             if (this.outputCurrentView) {
-                // 全景模式：不需要截图数据
                 dataWidget.value = "";
                 if (Array.isArray(this.node.widgets_values) && idx >= 0) this.node.widgets_values[idx] = "";
                 return;
             }
-            // 裁剪模式：截取当前 3D 裁剪画面
             const dataUrl = this.screenshotDataUrl();
             if (!dataUrl) {
-                // 无法截图时保留已有 current_view_data，避免丢失先前保存的裁剪画面
-                return;
+                return; // 无法截图：保留已有 current_view_data，避免丢失先前裁剪画面
             }
             dataWidget.value = dataUrl;
             if (Array.isArray(this.node.widgets_values) && idx >= 0) this.node.widgets_values[idx] = dataUrl;
@@ -621,9 +606,8 @@ import { getApi, imageSourceFromCandidate, lookupNodeOutputEntry } from "./Yuan_
 
             canvas.addEventListener("pointerdown", (ev) => {
                 if (ev.button !== 0) return;
-                // 释放离屏截图渲染器，避免拖拽期间存在双 WebGL 上下文导致 GPU 资源争用
+                // 拖拽期间释放离屏截图渲染器（防双 WebGL 上下文争用）并取消延迟截图同步
                 this._disposeScreenshotRenderer();
-                // 取消待执行的视图同步（如模式切换后延迟截图），确保拖拽期间不触发截图
                 window.clearTimeout(this.syncTimer);
                 this.syncTimer = 0;
                 root.focus?.({ preventScroll: true });
@@ -665,7 +649,6 @@ import { getApi, imageSourceFromCandidate, lookupNodeOutputEntry } from "./Yuan_
             root.addEventListener("wheel", (ev) => {
                 const delta = Number(ev.deltaY ?? ev.wheelDeltaY ?? 0);
                 if (delta !== 0) {
-                    // 乘法缩放：deltaY>0 放大（×1.08），deltaY<0 缩小（×0.92）
                     const factor = delta > 0 ? WHEEL_ZOOM_OUT : WHEEL_ZOOM_IN;
                     this.view.fov = clamp(this.view.fov * factor, FOV_MIN, FOV_MAX);
                     this.requestDraw();
@@ -749,7 +732,6 @@ import { getApi, imageSourceFromCandidate, lookupNodeOutputEntry } from "./Yuan_
                     return out;
                 };
             }
-            // 监听 output_current_view widget（True=全景，False=裁剪）
             const ocvWidget = this.node?.widgets?.find?.((w) => w?.name === "output_current_view");
             if (ocvWidget) {
                 this.orig.ocvCallback = typeof ocvWidget.callback === "function"
@@ -814,7 +796,6 @@ import { getApi, imageSourceFromCandidate, lookupNodeOutputEntry } from "./Yuan_
                     if (this.renderer) this.renderer.upload(video);
                     if (!this.videoPaused) void video.play().catch(() => {});
                     this.requestDraw();
-                    // 就绪后同步视图数据，避免 current_view_data 为空导致后端输出原图
                     this.scheduleViewSync();
                 };
                 const onTick = () => this.requestDraw();
@@ -857,8 +838,7 @@ import { getApi, imageSourceFromCandidate, lookupNodeOutputEntry } from "./Yuan_
                 this.img = image;
                 if (this.renderer) this.renderer.upload(image);
                 this.requestDraw();
-                // 就绪后同步视图数据，避免 current_view_data 为空导致后端输出原图
-                this.scheduleViewSync();
+                this.scheduleViewSync(); // 就绪后同步一次，避免 current_view_data 为空致后端输出原图
             };
             image.onerror = () => {
                 if (this.imgSrc !== nextSrc) return;
@@ -944,9 +924,7 @@ import { getApi, imageSourceFromCandidate, lookupNodeOutputEntry } from "./Yuan_
         runtime.attach();
     }
 
-    // ------------------------------------------------------------------ //
     // 注册扩展
-    // ------------------------------------------------------------------ //
     app.registerExtension({
     name: "ComfyUI-Yuan-Tool.Panorama",
     async beforeRegisterNodeDef(nodeType, nodeData) {

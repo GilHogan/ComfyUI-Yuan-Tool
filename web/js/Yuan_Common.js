@@ -46,7 +46,7 @@ export function removeV3PlaceholderInput(node, name) {
 }
 
 /** 将 ComfyUI 图像 UI 条目（{filename, subfolder, type, storage}）转为 /view URL；api 为空时返回相对路径。 */
-export function comfyImageEntryToUrl(entry, api) {
+function comfyImageEntryToUrl(entry, api) {
     if (!entry || typeof entry !== "object") return "";
     const filename = String(entry.filename || "").trim();
     if (!filename) return "";
@@ -164,11 +164,7 @@ export function showWidget(w) {
     if (w.element) w.element.style.display = "";
 }
 
-/** 通用分块上传循环：把大文件切片逐块 POST 到 uploadUrl，返回最后一块响应的 JSON。
-
-    与后端 handle_chunk_upload 对应。sendChunk(formData) 由调用方自定义
-    （用 fetch 或 api.fetchApi、指定 URL、校验状态码），返回解析后的 JSON。
- */
+/** 通用分块上传：逐块 POST 到后端 handle_chunk_upload，返回最后一块响应 JSON（sendChunk 由调用方自定义）。 */
 export async function uploadChunked(file, {
     chunkSize = 10 * 1024 * 1024,
     filename,

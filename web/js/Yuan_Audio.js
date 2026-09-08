@@ -1,6 +1,4 @@
-/**
- * Yuan Tool · 音频节点前端：音频列表（互斥播放/上传/选择/拖拽排序）+ 音频分流（按输出数量修剪端口）。
- */
+/** Yuan Tool · 音频前端：音频列表（互斥播放/上传/选择/拖拽排序）+ 音频分流（按输出数量修剪端口）。 */
 import { getApi, isAudioFileName } from "./Yuan_Common.js";
 
 (function () {
@@ -57,7 +55,6 @@ import { getApi, isAudioFileName } from "./Yuan_Common.js";
                 font-size: 10px; cursor: pointer; color: white; white-space: nowrap;
                 transition: background 0.15s; flex: 1;
             }
-            /* --- 音频小方块 --- */
             .yuan-al-block {
                 position: relative; width: ${BLOCK_SIZE}px; height: ${BLOCK_SIZE}px;
                 flex-shrink: 0; background: linear-gradient(160deg, #23232e, #1a1a24);
@@ -94,7 +91,6 @@ import { getApi, isAudioFileName } from "./Yuan_Common.js";
             }
             .yuan-al-block:hover .yuan-al-icon { opacity: 0.95; }
             .yuan-al-block.playing .yuan-al-icon { display: none; }
-            /* 播放中的均衡器动画 */
             .yuan-al-eq {
                 display: none; align-items: flex-end; gap: 2px;
                 height: 16px; margin-top: 2px; pointer-events: none;
@@ -122,7 +118,6 @@ import { getApi, isAudioFileName } from "./Yuan_Common.js";
                 font-size: 9px; color: #888; margin-top: auto; margin-bottom: 4px;
                 pointer-events: none;
             }
-            /* --- 添加音频文件选择面板 --- */
             .yuan-al-picker-overlay {
                 position: fixed; inset: 0; z-index: 99999;
                 background: rgba(0, 0, 0, 0.6);
@@ -205,15 +200,13 @@ import { getApi, isAudioFileName } from "./Yuan_Common.js";
         globalPlayer = null;
     }
 
-    /**
-     * 播放/暂停切换（全局互斥，先停止其他播放再播放当前）。
-     */
+    /** 播放/暂停切换（全局互斥：先停其他再播当前） */
     function togglePlayback(blockEl, src) {
         if (globalPlayer && globalPlayer.blockEl === blockEl) {
             stopGlobalPlayback();
             return;
         }
-        stopGlobalPlayback(); // 互斥：只允许一个播放
+        stopGlobalPlayback();
         const audio = new Audio(src);
         audio.preload = "auto";
         globalPlayer = { audio, blockEl };
@@ -238,7 +231,7 @@ import { getApi, isAudioFileName } from "./Yuan_Common.js";
                     while (node.outputs.length < n) {
                         node.addOutput("音频" + (node.outputs.length + 1), "AUDIO");
                     }
-                    // 根据端口数量重算节点高度（后端声明 30 端口，初始会渲染过高）
+                    // 按端口数量重算高度（后端声明 30 端口，初始会渲染过高）
                     if (node.computeSize && node.setSize) {
                         const sz = node.computeSize();
                         const width = Math.max(node.size?.[0] || 0, sz[0]);
@@ -278,7 +271,7 @@ import { getApi, isAudioFileName } from "./Yuan_Common.js";
             // --- 数据模型：音频文件相对路径列表（input 目录） ---
             let audioFiles = [];
             let pickerOverlay = null;
-            // 拖拽排序状态（所有方块共享，定义在方块闭包内会导致交换失效）
+            // 拖拽状态在闭包外共享（定义在方块内会导致交换失效）
             let draggedNode = null;
             let lastSwapTime = 0;
             // 本节点创建的方块集合（onRemoved 时判断播放归属，避免误停其他节点）
@@ -317,7 +310,6 @@ import { getApi, isAudioFileName } from "./Yuan_Common.js";
                 overflow: hidden;
             `;
 
-            // 音频方块滑轨
             const gallery = document.createElement("div");
             gallery.className = "yuan-al-gallery";
             gallery.style.cssText = `
@@ -329,7 +321,6 @@ import { getApi, isAudioFileName } from "./Yuan_Common.js";
             `;
             container.appendChild(gallery);
 
-            // 按钮行
             const btnRow = document.createElement("div");
             btnRow.style.cssText = `
                 display: flex; gap: 6px; margin-top: 6px; height: ${BTN_ROW_HEIGHT}px;
@@ -371,7 +362,6 @@ import { getApi, isAudioFileName } from "./Yuan_Common.js";
             btnRow.append(addBtn, uploadBtn, clearBtn);
             container.appendChild(btnRow);
 
-            // 隐藏的文件上传 input
             const fileInput = document.createElement("input");
             fileInput.type = "file";
             fileInput.multiple = true;
@@ -435,7 +425,7 @@ import { getApi, isAudioFileName } from "./Yuan_Common.js";
 
             // --- 4. 音频方块渲染 ---
             function renderGallery() {
-                // 记录本节点正在播放的音频路径（重渲染会替换 DOM，需恢复视觉状态）
+                // 记录本节点正在播放的路径：重渲染会替换 DOM，需在新方块上恢复播放状态
                 let playingPath = null;
                 if (globalPlayer && myBlocks.has(globalPlayer.blockEl) && globalPlayer.blockEl.dataset) {
                     playingPath = globalPlayer.blockEl.dataset.path;
@@ -456,7 +446,7 @@ import { getApi, isAudioFileName } from "./Yuan_Common.js";
                     gallery.appendChild(createAudioBlock(path, index));
                 });
 
-                // 恢复播放视觉：音频仍在播，把 blockEl 指向新方块（旧元素已成孤儿）
+                // 音频仍在播：把 blockEl 指到新方块（旧元素已成孤儿）恢复视觉
                 if (playingPath !== null && globalPlayer) {
                     const newBlock = Array.from(gallery.querySelectorAll(".yuan-al-block"))
                         .find(b => b.dataset.path === playingPath);
@@ -474,12 +464,10 @@ import { getApi, isAudioFileName } from "./Yuan_Common.js";
                 block.dataset.path = path;
                 myBlocks.add(block);
 
-                // 序号徽标
                 const num = document.createElement("div");
                 num.className = "yuan-al-num";
                 num.innerText = (index + 1).toString();
 
-                // 删除按钮
                 const del = document.createElement("div");
                 del.className = "yuan-al-del";
                 del.innerHTML = '<svg width="8" height="8" viewBox="0 0 10 10"><path d="M1 1L9 9M9 1L1 9" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>';
@@ -493,7 +481,6 @@ import { getApi, isAudioFileName } from "./Yuan_Common.js";
                     serializeFiles();
                 };
 
-                // 播放图标 + 均衡器动画
                 const icon = document.createElement("div");
                 icon.className = "yuan-al-icon";
                 icon.innerText = "▶";
@@ -501,20 +488,18 @@ import { getApi, isAudioFileName } from "./Yuan_Common.js";
                 eq.className = "yuan-al-eq";
                 eq.innerHTML = "<span></span><span></span><span></span><span></span>";
 
-                // 文件名
                 const name = document.createElement("div");
                 name.className = "yuan-al-name";
                 name.innerText = path.split("/").pop();
                 name.title = path;
 
-                // 时长
                 const dur = document.createElement("div");
                 dur.className = "yuan-al-dur";
                 dur.innerText = "···";
 
                 block.append(num, del, icon, eq, name, dur);
 
-                // 异步加载时长（仅读元数据）
+                // 异步读取元数据得到时长（Audio 探测，不触发整段下载）
                 loadDuration(path, dur);
 
                 // 点击播放/暂停（区分拖拽位移）
@@ -586,7 +571,7 @@ import { getApi, isAudioFileName } from "./Yuan_Common.js";
                 } catch (_) {}
             }
 
-            // --- 5. 滚轮：上下滑动横向滚动滑轨（不触发播放） ---
+            // --- 5. 滚轮：垂直滚动映射为横向 ---
             gallery.addEventListener("wheel", (e) => {
                 if (gallery.scrollWidth > gallery.clientWidth && e.deltaY !== 0) {
                     e.preventDefault();
@@ -660,7 +645,6 @@ import { getApi, isAudioFileName } from "./Yuan_Common.js";
                 const panel = document.createElement("div");
                 panel.className = "yuan-al-picker";
 
-                // 头部
                 const header = document.createElement("div");
                 header.className = "yuan-al-picker-header";
                 const title = document.createElement("span");
@@ -674,13 +658,11 @@ import { getApi, isAudioFileName } from "./Yuan_Common.js";
                 closeBtn.onclick = () => closeFilePicker();
                 header.append(title, closeBtn);
 
-                // 搜索框
                 const search = document.createElement("input");
                 search.className = "yuan-al-picker-search";
                 search.type = "text";
                 search.placeholder = "搜索文件名…";
 
-                // 文件列表
                 const list = document.createElement("div");
                 list.className = "yuan-al-picker-list";
 
@@ -727,7 +709,6 @@ import { getApi, isAudioFileName } from "./Yuan_Common.js";
                 search.addEventListener("input", () => renderPickerList(search.value));
                 search.addEventListener("keydown", (e) => e.stopPropagation());
 
-                // 底部
                 const footer = document.createElement("div");
                 footer.className = "yuan-al-picker-footer";
                 const doneBtn = document.createElement("button");
@@ -762,7 +743,7 @@ import { getApi, isAudioFileName } from "./Yuan_Common.js";
             }
 
             // --- 9. 布局管理 ---
-            // 容器高度固定，尺寸交给 LiteGraph/V3 处理；不重写 resize（反复强制最小高会导致拉伸异常）
+            // 高度固定，尺寸交由 LiteGraph/V3；不重写 resize（反复强制最小高会拉伸异常）
             const MIN_W = 240;
 
             function getContainerHeight() {
@@ -774,7 +755,7 @@ import { getApi, isAudioFileName } from "./Yuan_Common.js";
                 return [Math.max(10, nodeWidth - 30), getContainerHeight()];
             };
 
-            // V3 前端：仅绑定拖拽上传事件，不强制 min-height（避免拉伸被锁死）
+            // V3：只绑定拖拽上传事件，不强制 min-height（避免拉伸被锁死）
             let v3EventsAttached = false;
             function attachV3Events() {
                 if (!v3NodeElement) checkIsV3(); // 确保 DOM 挂载后完成检测
@@ -852,7 +833,7 @@ import { getApi, isAudioFileName } from "./Yuan_Common.js";
 
             const origOnRemoved = node.onRemoved;
             node.onRemoved = function () {
-                // 仅停止本节点方块的播放（WeakSet 判断归属，避免误停其他节点）
+                // 只停本节点方块的播放，避免误停其他节点
                 if (globalPlayer && myBlocks.has(globalPlayer.blockEl)) {
                     stopGlobalPlayback();
                 }

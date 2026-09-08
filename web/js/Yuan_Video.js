@@ -20,7 +20,7 @@ app.registerExtension({
             const onResize = nodeType.prototype.onResize;
             const onDrawForeground = nodeType.prototype.onDrawForeground;
 
-            // Hook into workflow loading to instantly restore the video UI
+            // 工作流加载时立即恢复视频 UI
             nodeType.prototype.onConfigure = function (info) {
                 if (onConfigure) {
                     onConfigure.apply(this, arguments);
@@ -45,8 +45,7 @@ app.registerExtension({
                 }
             };
 
-            // Continuous frame-accurate check to guarantee exact height alignment 
-            // even on initial graph load when the workflow reloads!
+            // 逐帧校正 DOM 高度：工作流加载/重载后也能立即与节点底边精确对齐
             nodeType.prototype.onDrawForeground = function (ctx) {
                 if (onDrawForeground) onDrawForeground.apply(this, arguments);
 
@@ -55,14 +54,14 @@ app.registerExtension({
                     const currentHeight = parseFloat(this.domWidget.element.style.height);
                     const targetHeight = Math.max(150, remainingHeight);
 
-                    // Only update DOM if the height has drifted by more than 1 pixel
+                    // 高度偏差 >1px 才写回，避免每帧触发重排
                     if (isNaN(currentHeight) || Math.abs(currentHeight - targetHeight) > 1) {
                         this.domWidget.element.style.height = `${targetHeight}px`;
                     }
                 }
             };
 
-            // Allow the node to scale nicely when resized by the user
+            // 用户拉伸节点大小时同步 DOM 高度
             nodeType.prototype.onResize = function (size) {
                 if (onResize) onResize.apply(this, arguments);
                 if (this.syncLayoutToNode) {
@@ -71,10 +70,10 @@ app.registerExtension({
                 if (this.domWidget && this.domWidget.element) {
                     this.domWidget.element.style.margin = "0";
 
-                    // Fallback calc if last_y isn't ready
+                    // last_y 未就绪时的兜底估算
                     let yOffset = this.domWidget.last_y;
                     if (!yOffset) {
-                        yOffset = 30; // Default LiteGraph Title Height
+                        yOffset = 30; // LiteGraph 标题高度兜底
                         if (this.widgets) {
                             for (let w of this.widgets) {
                                 if (w === this.domWidget) break;
@@ -95,14 +94,13 @@ app.registerExtension({
                 node._initializing = true;
                 node._should_reset_trim = false;
 
-                // --- THE CORE FIX FOR COMFYUI V2 ---
+                // --- V2 关键修复：屏蔽 ComfyUI 写入 imgs 预览图 ---
                 Object.defineProperty(node, 'imgs', {
                     get: function() { return undefined; },
-                    set: function(val) { /* Ignore attempts by ComfyUI to set an image preview */ },
+                    set: function(val) { /* 忽略 ComfyUI 设置的预览图 */ },
                     configurable: true
                 });
 
-                // Find the core widgets
                 const videoWidget = this.widgets.find((w) => w.name === "视频");
                 const frameRateWidget = this.widgets.find((w) => w.name === "帧率");
                 const displayModeWidget = this.widgets.find((w) => w.name === "显示模式");
@@ -123,9 +121,7 @@ app.registerExtension({
                 const outputModeWidget = this.widgets.find((w) => w.name === "输出模式");
                 const segmentIndexWidget = this.widgets.find((w) => w.name === "分段索引");
 
-                // ====================================================================
-                // WIDGET HIDING & SYNC ENGINE
-                // ====================================================================
+                // ==== Widget 隐藏与同步引擎 ====
                 let isSyncing = false;
 
                 node.toggleWidgetVisibility = function () {
@@ -136,7 +132,7 @@ app.registerExtension({
                     hideWidget(startFrameWidget);
                     hideWidget(endFrameWidget);
                     hideWidget(durationFramesWidget);
-                    hideWidget(displayModeWidget); // driven by UI
+                    hideWidget(displayModeWidget); // 由 UI 按钮驱动
 
                     hideWidget(cropXWidget);
                     hideWidget(cropYWidget);
@@ -150,14 +146,13 @@ app.registerExtension({
                     } else {
                         hideWidget(segmentIndexWidget);
                     }
-                    hideWidget(outputModeWidget); // driven by UI
+                    hideWidget(outputModeWidget); // 由 UI 开关驱动
 
                     if (app.graph) {
                         app.graph.setDirtyCanvas(true, true);
                     }
 
-                    // Allow the node to calculate its required min size, but DO NOT overwrite
-                    // the current user-defined width/height unless it's strictly smaller than the minimum.
+                    // 节点最小尺寸约束：仅当用户宽/高小于最小值时抬高，不覆盖用户设定
                     const minSize = node.computeSize();
                     node.size[0] = Math.max(node.size[0], minSize[0]);
                     node.size[1] = Math.max(node.size[1], minSize[1]);
@@ -186,7 +181,7 @@ app.registerExtension({
                     isSyncing = false;
                 };
 
-                // Bind standard input callbacks to synchronize automatically
+                // 绑定常规输入回调：改动后自动同步到另一组
                 function bindWidget(w, isFrame, isFrameRate = false) {
                     if (!w) return;
                     const orig = w.callback;
@@ -195,7 +190,7 @@ app.registerExtension({
                         if (isFrame) node.syncTimeFromFrames();
                         else node.syncFramesFromTime();
 
-                        // Always force a ruler update if framerate changes so the timeline marks match the new rate
+                        // 帧率变化时强制重绘刻度，保证刻度与新帧率一致
                         if (duration === 0 || isFrameRate) updateRuler();
                         updateUI(true);
                     };
@@ -205,16 +200,16 @@ app.registerExtension({
                 bindWidget(endTimeWidget, false);
                 bindWidget(startFrameWidget, true);
                 bindWidget(endFrameWidget, true);
-                bindWidget(frameRateWidget, false, true); // Triggers re-sync of frames from time AND updates ruler
+                bindWidget(frameRateWidget, false, true); // 帧率变化：重算帧值并重绘刻度
 
-                // Bind update function to the node so onConfigure can access it
+                // 绑定到节点，供 onConfigure 恢复视频预览调用
                 node.updatePreview = function (filename) {
                     if (!filename || filename === "无") {
                         return;
                     }
                     let url;
 
-                    // Check if absolute path (Starts with C:\ or /)
+                    // 绝对路径（盘符:\ 或 / 开头）走后端自定义查看接口
                     if (filename.match(/^[a-zA-Z]:\\/) || filename.startsWith('/')) {
                         url = api.apiURL(`/yuan_tool/video_custom_view?filename=${encodeURIComponent(filename)}`);
                     } else {
@@ -235,13 +230,11 @@ app.registerExtension({
                     };
                 }
 
-                // Initialize widget visibility right away
+                // 初始化：补默认显示模式并立即隐藏托管控件
                 if (displayModeWidget && !displayModeWidget.value) displayModeWidget.value = "秒";
                 node.toggleWidgetVisibility();
 
-                // ====================================================================
-                // CHOOSE FILE BUTTON (Native ComfyUI Widget, placed below duration)
-                // ====================================================================
+                // ==== 选择视频文件按钮 ====
                 const fileInput = document.createElement("input");
                 fileInput.type = "file";
                 fileInput.accept = "video/*";
@@ -252,12 +245,12 @@ app.registerExtension({
                     fileInput.click();
                 });
 
-                // Define robust upload logic
+                // 上传策略：优先本地绝对路径，其次查重、分片、标准上传
                 const uploadFile = async (file) => {
                     try {
                         if (errorMsg) errorMsg.style.display = "none";
 
-                        // Fast Path: If desktop environment exposes absolute file path, skip upload entirely!
+                        // 快路径：桌面环境提供绝对路径时免上传直接使用
                         if (file.path) {
                             if (videoWidget.options && videoWidget.options.values && !videoWidget.options.values.includes(file.path)) {
                                 videoWidget.options.values.push(file.path);
@@ -269,7 +262,7 @@ app.registerExtension({
                             return;
                         }
 
-                        // First check if the file already exists on the server to de-duplicate
+                        // 先查服务端是否已有同名同大小文件，避免重复上传
                         const safeFileName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
                         try {
                             const checkResp = await api.fetchApi(`/yuan_tool/video_check_file?filename=${encodeURIComponent(safeFileName)}&size=${file.size}`);
@@ -292,7 +285,7 @@ app.registerExtension({
                         btnWidget.name = "上传中...";
                         node.setDirtyCanvas(true, false);
 
-                        const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB chunks
+                        const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB 分片
 
                         if (file.size > CHUNK_SIZE) {
                             const safeName = Date.now() + "_" + safeFileName;
@@ -322,14 +315,14 @@ app.registerExtension({
                             node.updatePreview(data.name);
                             node.syncFramesFromTime();
                         } else {
-                            // Standard upload for small files
+                            // 小文件走标准上传
                             const body = new FormData();
                             body.append("image", file);
 
                             const resp = await api.fetchApi("/upload/image", {
                                 method: "POST",
                                 body: body,
-                              // No subfolder param -> goes to input root!
+                              // 不传 subfolder，落到 input 根目录
                             });
 
                             if (resp.status === 413) {
@@ -357,7 +350,7 @@ app.registerExtension({
                     } finally {
                         btnWidget.name = "选择视频上传";
                         node.setDirtyCanvas(true, false);
-                        fileInput.value = ""; // reset input
+                        fileInput.value = ""; // 复位，便于再次选择同一文件
                     }
                 };
 
@@ -367,7 +360,7 @@ app.registerExtension({
                     }
                 });
 
-                // Attach drag & drop directly onto the LiteGraph node canvas frame
+                // 支持把视频文件直接拖放到节点画布上传
                 node.onDragOver = function (e) {
                     if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes("Files")) {
                         e.preventDefault();
@@ -388,7 +381,7 @@ app.registerExtension({
                 };
 
                 node.onDropFile = function (file) {
-                    // Check MIME type or common video file extensions to ensure all videos are caught
+                    // 校验 MIME 或常见视频扩展名，确保不会漏掉可上传文件
                     if (file.type.startsWith('video/') || file.name.toLowerCase().match(/\.(mp4|webm|mkv|avi|mov|m4v|flv|wmv)$/)) {
                         uploadFile(file);
                         return true;
@@ -396,16 +389,14 @@ app.registerExtension({
                     return false;
                 };
 
-                // Clean up DOM elements strictly tied to this node instance
+                // 节点移除时清理该节点专属的 DOM 元素
                 const originalOnRemove = node.onRemoved;
                 node.onRemoved = function () {
                     if (fileInput && fileInput.parentNode) fileInput.parentNode.removeChild(fileInput);
                     if (originalOnRemove) originalOnRemove.apply(this, arguments);
                 };
 
-                // ====================================================================
-                // UI CONTAINER (Preview & Timeline Editor)
-                // ====================================================================
+                // ==== UI 容器（预览 + 时间轴） ====
                 const container = document.createElement("div");
                 const defaultBg = "rgba(30, 30, 30, 0.9)";
                 Object.assign(container.style, {
@@ -436,7 +427,7 @@ app.registerExtension({
                 });
                 container.appendChild(errorMsg);
 
-                // Top Bar: Display Mode Toggle & Trimmed Length
+                // 顶栏：显示模式切换与裁剪总时长
                 const playerTop = document.createElement("div");
                 Object.assign(playerTop.style, {
                     display: "flex",
@@ -446,12 +437,12 @@ app.registerExtension({
                     marginBottom: "-4px",
                     flexShrink: "0",
                     boxSizing: "border-box",
-                    flexWrap: "wrap", // Prevent squishing/overflow by letting it wrap gracefully
+                    flexWrap: "wrap", // 空间不足时允许换行防挤压
                     gap: "6px",
                     position: "relative"
                 });
 
-                // Toggle Container UI
+                // 模式切换开关容器
                 const toggleWrapper = document.createElement("div");
                 Object.assign(toggleWrapper.style, {
                     display: "flex",
@@ -464,7 +455,6 @@ app.registerExtension({
                     boxSizing: "border-box"
                 });
 
-                // Segmented pill control
                 const segmentedToggle = document.createElement("div");
                 Object.assign(segmentedToggle.style, {
                     display: "flex",
@@ -518,9 +508,8 @@ app.registerExtension({
                     }
                 };
 
-                // Keep a reference so the init block below can call it
                 let isFramesMode = false;
-                applySegmentState(false); // Default: Time is active
+                applySegmentState(false); // 默认：时间模式
 
                 // 统一模式切换入口：UI 按钮与节点面板"显示模式"下拉共用。
                 // 切换只改变 UI 输入框的标签描述与显示值（时间组 <-> 帧组），
@@ -541,7 +530,7 @@ app.registerExtension({
 
                 segmentedToggle.onclick = doToggle;
 
-                // Expose the switch activation so the init requestAnimationFrame below can call it
+                // 供下方初始化 rAF 模拟点击，恢复保存的显示模式
                 const switchBox = { onclick: doToggle };
 
                 // 节点面板"显示模式"下拉直接切换时，同样触发同步
@@ -553,7 +542,7 @@ app.registerExtension({
                     };
                 }
 
-                // Allow onConfigure (workflow reload) to re-sync the visual highlight
+                // 工作流重载时恢复开关高亮（同步保存的显示模式）
                 node.syncToggleVisual = function () {
                     const savedIsFrames = displayModeWidget && displayModeWidget.value === "帧";
                     isFramesMode = savedIsFrames;
@@ -1038,7 +1027,7 @@ app.registerExtension({
                     } else {
                         cropBox.style.display = "none";
                         cropEditContainer.style.display = "none";
-                        // updateCropUI handles cropDims visibility when off
+                        // 关闭时 cropDims 的显隐由 updateCropUI 统一处理
                     }
                     if (isCropVisible) {
                         videoPreview.pause();
@@ -1051,7 +1040,7 @@ app.registerExtension({
 
                 container.appendChild(playerTop);
 
-                // Video Preview Area (Native Controls)
+                // 视频预览区（原生控件）
                 const videoWrapper = document.createElement("div");
                 Object.assign(videoWrapper.style, {
                     position: "relative",
@@ -1095,7 +1084,7 @@ app.registerExtension({
                     overflow: "hidden"
                 });
 
-                // 3x3 Grid lines
+                // 三分构图参考线
                 for (let i = 1; i <= 2; i++) {
                     const vLine = document.createElement("div");
                     Object.assign(vLine.style, {
@@ -1142,7 +1131,7 @@ app.registerExtension({
 
                 container.appendChild(videoWrapper);
 
-                // Trim Area (Time Ruler & Slider)
+                // 裁剪区：时间刻度尺 + 滑块
                 const trimArea = document.createElement("div");
                 Object.assign(trimArea.style, {
                     display: "flex",
@@ -1152,7 +1141,7 @@ app.registerExtension({
                     padding: "12px",
                     borderRadius: "6px",
                     border: "1px solid rgba(255, 255, 255, 0.05)",
-                    flexShrink: "0", // Prevent timeline from squishing when shrinking node
+                    flexShrink: "0", // 缩小节点时时间轴不被挤压
                     boxSizing: "border-box"
                 });
 
@@ -1247,10 +1236,7 @@ app.registerExtension({
                     }
                 };
 
-                // ====================================================================
-                // 智能分段：点击「检测分段」调用后端一次性检测镜头边界，
-                // 分段结果直接绘制在下方裁剪时间轴上（小方块），无需重新运行整个流程。
-                // ====================================================================
+                // ==== 智能分段：后端检测镜头边界，结果以小方块画到时间轴 ====
                 let segmentsCacheKey = "";
                 let segmentsCacheData = null;
                 // 当前在时间轴上选中的分段（自定义裁剪模式下控制预览定位与播放范围）
@@ -1419,14 +1405,11 @@ app.registerExtension({
                     };
                 }
 
-                // Delay DOM Widget creation to ensure it is added after all standard widgets
+                // 延后到常规 widget 建完后再挂 DOM widget
                 setTimeout(() => {
-                    // Add HTML widget to LiteGraph
                     node.domWidget = node.addDOMWidget("VideoUI", "div", container);
 
-                    // Fixed: Return a solid minimum required bounding box.
-                    // Bumped horizontal from 200px to 360px. This natively stops LiteGraph 
-                    // from letting the node be squished too thin, completely preventing overlap.
+                    // 返回固定最小包围盒，避免 LiteGraph 把节点压得过窄导致 UI 重叠
                     node.domWidget.computeSize = function (width) {
                         const nodeWidth = node.size?.[0] || width || 690;
                         return [Math.max(10, nodeWidth - 30), 250];
@@ -1434,32 +1417,29 @@ app.registerExtension({
                     // V3：DOM 行尺寸约束（返回 DOM 自身所需尺寸，不含节点标题/端口余量）
                     node.domWidget.computeLayoutSize = () => ({ minWidth: 660, minHeight: 250 });
 
-                    // Applies the default creation bounds natively, increased default height
-                    // to match the widgets required height out of the box.
+                    // 创建后按内容抬高默认宽高（起始高度：740）
                     requestAnimationFrame(() => {
                         if (node.size[0] < 690) {
                             node.size[0] = 690;
                         }
 
-                        // INCREASE DEFAULT HEIGHT HERE:
-                        // Change the 620 below to adjust the starting height of the node
                         if (node.size[1] < 740) {
                             node.size[1] = 740;
                         }
 
-                        // Trigger manual resize call so the vertical math applies instantly
+                        // 立即触发一次手动 resize，让高度换算即时生效
                         node.syncLayoutToNode();
                         if (node.onResize) node.onResize(node.size);
 
-                        // Sync visual toggle to initial data
+                        // 恢复保存的显示模式高亮（预置相反值后模拟点击）
                         if (displayModeWidget && displayModeWidget.value === "帧") {
-                            isFramesMode = false; // prime for click
+                            isFramesMode = false; // 预置相反值，下方 click 触发切换
                             switchBox.onclick();
                         }
 
-                        // 同步输出模式切换按钮到初始数据
+                        // 同步输出模式按钮到初始数据（预置相反值后模拟点击）
                         if (outputModeWidget && outputModeWidget.value === "智能分段输出") {
-                            isSmartMode = false; // prime for click
+                            isSmartMode = false;
                             outputSwitchBox.onclick();
                         }
 
@@ -1470,11 +1450,8 @@ app.registerExtension({
                     });
                 }, 100);
 
-                // ====================================================================
-                // V3 (Nodes 2.0) 适配：Vue 控件不走原生 callback，逐帧轮询关键
-                // widget 值；移除 UI 托管参数的空占位端口；同步最小尺寸。
-                // 全部带变化检测（值/签名缓存），未变化时不做任何写入，避免布局抖动
-                // ====================================================================
+                // ==== V3 适配：Vue 控件不走原生 callback，逐帧轮询 widget 值；
+                // 移除托管参数的空占位端口、同步最小尺寸；均带变化检测，未变化不写入，避免布局抖动 ====
                 const protoODF = node.onDrawForeground;
                 node.onDrawForeground = function (ctx) {
                     if (protoODF) protoODF.apply(this, arguments);
@@ -1537,16 +1514,14 @@ app.registerExtension({
                     } catch (_) {}
                 };
 
-                // ====================================================================
-                // LOGIC & SYNCING
-                // ====================================================================
+                // ==== 播放/裁剪逻辑与同步 ====
                 let duration = 0;
                 let dragging = null;
                 let dragOffset = 0;
                 let dragSelectionWidth = 0;
                 let isUpdatingDuration = false;
 
-                // Crop logic
+                // 裁剪框拖动状态
                 let cropDragging = null;
                 let dragStartX = 0;
                 let dragStartY = 0;
@@ -1770,29 +1745,29 @@ app.registerExtension({
                 lmHandle.onpointerdown = (e) => onCropPointerDown(e, "lm");
                 rmHandle.onpointerdown = (e) => onCropPointerDown(e, "rm");
 
-                // Add a resize observer to the video wrapper so crop handles stay pinned
+                // 监听容器尺寸变化，保证裁剪框始终吸附在视频上
                 const resizeObserver = new ResizeObserver(() => {
                     if (isCropVisible) updateCropUI();
                 });
                 resizeObserver.observe(videoWrapper);
 
-                // Ensure we clean up observer
+                // 节点移除时断开观察器
                 const oldOnRemoved = node.onRemoved;
                 node.onRemoved = function () {
                     resizeObserver.disconnect();
                     if (oldOnRemoved) oldOnRemoved.apply(this, arguments);
                 }
 
-                // Smart helper to ensure timeline displays correctly even with no video loaded
+                // 未加载视频时也能正常显示时间轴的兜底时长
                 const getActiveDuration = () => {
                     if (duration > 0) return duration;
                     let e = endTimeWidget ? parseFloat(endTimeWidget.value) || 0 : 0;
                     let s = startTimeWidget ? parseFloat(startTimeWidget.value) || 0 : 0;
                     let maxVal = Math.max(e, s);
-                    return maxVal > 0 ? Math.max(maxVal, 1.0) : 1.0; // Default to 1.0 if completely empty
+                    return maxVal > 0 ? Math.max(maxVal, 1.0) : 1.0; // 全空时兜底 1.0 秒
                 };
 
-                // Time Duration Hook
+                // 「时长」控件回调拦截（联动起止时间）
                 if (durationWidget) {
                     const origCallback = durationWidget.callback;
                     durationWidget.callback = function (v) {
@@ -1829,7 +1804,7 @@ app.registerExtension({
                     };
                 }
 
-                // Frame Duration Hook
+                // 「时长帧数」控件回调拦截（联动起止帧）
                 if (durationFramesWidget) {
                     const origCallback = durationFramesWidget.callback;
                     durationFramesWidget.callback = function (v) {
@@ -1868,7 +1843,7 @@ app.registerExtension({
                     };
                 }
 
-                // Standard Video Player Format HH:MM:SS (only shows hours if it's over an hour long)
+                // 播放器标准时间格式：超过 1 小时才显示小时位
                 const formatTime = (secs) => {
                     const h = Math.floor(secs / 3600);
                     const m = Math.floor((secs % 3600) / 60);
@@ -1988,7 +1963,7 @@ app.registerExtension({
                     }
                 }
 
-                // Force draw default empty state on creation
+                // 创建后先绘制一次空态时间轴与 UI
                 setTimeout(() => {
                     updateRuler();
                     updateUI();
@@ -2053,20 +2028,11 @@ app.registerExtension({
                     }
                 });
 
-                // ====================================================================
-                // 段尾精准停帧监控
-                // 背景：HTMLMediaElement 的 timeupdate 事件频率由浏览器决定（约每 250ms 一次）。
-                // 播放越过分段段尾后，浏览器会先渲染出下一分镜的首帧画面，timeupdate 才触发，
-                // 此时 pause + 拉回只是"事后补救"，用户已经看到了下一分镜画面。
-                // 方案：
-                //   1) requestVideoFrameCallback（Chrome/Edge/Firefox）：每呈现一帧回调一次，
-                //      用该帧精确 PTS(mediaTime) 判断——输出末帧（end-1e-6）一呈现立即暂停，
-                //      下一分镜首帧根本不会被提交渲染，零闪现。
-                //   2) setInterval 8ms 兜底：读 currentTime >= end 即暂停（支持 rVFC 时是双保险）。
-                //   3) ontimeupdate 兜底：后台节流等极端情况最后补救。
-                // 说明：end = 输出末帧精确PTS + 1e-6，浏览器显示 PTS<=currentTime 的帧，暂停后
-                // 停留帧仍是输出末帧；所有函数幂等，重复触发不会产生重复 pause/seek 抖动。
-                // ====================================================================
+                // ==== 段尾精准停帧 ====
+                // timeupdate 约 250ms/次：越界后浏览器先渲染出下一分镜首帧才触发事件，
+                // pause 拉回只是事后补救。故用 rVFC（逐帧回调，按精确 PTS 判断）在输出末帧
+                // 呈现瞬间暂停，杜绝闪现；setInterval 8ms 轮询与 ontimeupdate 依次兜底。
+                // end = 输出末帧精确 PTS + 1e-6，暂停停留帧仍是输出末帧；函数幂等不抖动。
                 const _pauseAtSegEnd = () => {
                     if (!selectedSegment || selectedSegment.end <= 0 || duration <= 0) return;
                     if (!videoPreview.paused) videoPreview.pause();
@@ -2107,7 +2073,7 @@ app.registerExtension({
                 }
                 const _segEndPollTimer = setInterval(_checkSegEndByTime, 8);
 
-                // --- Timeline Drag Logic (Primary state runs in Seconds format to lock playback natively) ---
+                // --- 时间轴拖动逻辑（主状态以秒运行，播放定位原生锁定） ---
                 sliderBox.onpointerdown = (e) => {
                     selectedSegment = null; // 拖动裁切点时取消分段选择
                     const activeDur = getActiveDuration();
@@ -2184,7 +2150,7 @@ app.registerExtension({
                     sliderBox.releasePointerCapture(e.pointerId);
                 };
 
-                // --- Improved Global Drag & Drop for Node Inner Content ---
+                // --- 容器内部区域拖放上传 ---
                 let dragCounter = 0;
                 container.addEventListener("dragenter", (e) => {
                     e.preventDefault();

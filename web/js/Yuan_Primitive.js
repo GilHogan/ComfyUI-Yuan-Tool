@@ -1,5 +1,4 @@
-// 「选项」节点（YuanPrimitive）：基于原生 PrimitiveNode 的隔离实现，
-// COMBO 输入展开为 Yes/No 互斥开关并写回目标节点，非 COMBO 输入保持原生行为；标题/端口名汉化。
+// 「选项」节点（YuanPrimitive）：COMBO 输入展开为 Yes/No 互斥开关写回目标节点，非 COMBO 保持原生行为。
 const { app } = window.comfyAPI.app;
 
 const YUAN_PRIMITIVE_TYPE = "YuanPrimitive";
@@ -80,7 +79,6 @@ app.registerExtension({
                 if (super._createWidget) return super._createWidget(e, t, n, r);
             }
 
-            // 把 COMBO 选项展开为一组互斥 toggle 开关
             _createComboToggles(options, targetNode, inputName) {
                 // 目标输入当前的选中值，作为默认打开的开关
                 let current = null;
@@ -187,7 +185,7 @@ app.registerExtension({
             YUAN_PRIMITIVE_TYPE,
             Object.assign(YuanPrimitive, {
                 title: YUAN_PRIMITIVE_TITLE,
-                // 静态 description：前端为纯前端注册节点生成节点定义时读取
+                // 静态 description：纯前端注册节点生成定义时读取
                 // （updateVueAppNodeDefs: description = r.description ?? "Frontend only node for ..."）
                 description: YUAN_PRIMITIVE_DESCRIPTION,
             })

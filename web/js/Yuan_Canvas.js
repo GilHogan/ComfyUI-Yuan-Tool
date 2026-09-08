@@ -241,11 +241,10 @@ app.registerExtension({
     name: "Comfy.Yuan_Canvas",
 
     async getCustomWidgets(app) {
-        // 无自定义 widget
     },
     /** 启动流程末尾调用，用于注册事件监听与全局 UI 操作。 */
     async setup(app) {
-        /** 当节点"返回"一个 ui 元素时，通常在处理末尾 */
+        // 响应 compositor_init 推送：恢复尺寸并刷新图层
         function executedMessageHandler(event, a, b) {
             const e = event.detail.output;
             const nodeId = event.detail.node;
@@ -1525,7 +1524,7 @@ class Editor {
     }
 
     initFabric(c) {
-        // wannabe widgets
+        // 画布宽/高/内边距参数容器（镜像 widget 值，供尺寸计算与回调使用）
         this.w = {
             value: 512, callback: (value, graphCanvas, node) => {
 

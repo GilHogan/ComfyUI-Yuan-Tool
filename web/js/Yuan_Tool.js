@@ -1,7 +1,7 @@
 const { app } = window.comfyAPI.app;
 import { uploadChunked } from "./Yuan_Common.js";
 
-// ==================== YuanTool（多帧参考节点，list_mode 动态端口）====================
+// ---------- YuanTool：多帧参考节点（list_mode 动态端口） ----------
 function registerYuanTool(nodeType, portMeta) {
     const onNodeCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function () {
@@ -41,7 +41,7 @@ function registerYuanTool(nodeType, portMeta) {
             return !!(inp && inp.link != null);
         };
 
-        // 单帧端口可见性：1、2 总是显示；第 k 个（k>=3）在前面所有端口都已连接或自身已连接时显示
+        // 单帧端口递进：1、2 常显，第 k 个(k>=3)需前 k-1 个均已连接或自身已连接
         const singleVisible = (idx) => {
             if (idx < 2) return true;
             if (isConnected(singleNames[idx])) return true;
@@ -51,7 +51,7 @@ function registerYuanTool(nodeType, portMeta) {
             return true;
         };
 
-        // 列表端口可见性：1、2 总是显示；第 k 个（k>=3）在前 k-1 个列表端口全部连接或自身已连接时显示
+        // 列表端口递进：1、2 常显，第 k 个(k>=3)需前 k-1 个列表端口全部连接或自身已连接
         const listVisible = (idx) => {
             if (idx < 2) return true;
             if (isConnected(listNames[idx])) return true;
@@ -64,9 +64,7 @@ function registerYuanTool(nodeType, portMeta) {
         const syncPortsReal = (mode) => {
             if (self._syncing) return;
             self._syncing = true;
-            // 期望端口集合（有序）：
-            // - 列表模式：按 listVisible 递进显示 image_list_1..8
-            // - 单帧模式：按 singleVisible 递进显示 1..8
+            // 期望端口集合（有序）：列表模式=listNames 递进组，单帧模式=singleNames 递进组
             const desiredNames = [];
             if (mode) {
                 for (let i = 0; i < listNames.length; i++) {
@@ -117,9 +115,8 @@ function registerYuanTool(nodeType, portMeta) {
                 }
             }
 
-            // 第四步：确保背景端口存在且在最后。
-            // 不能用 removeInput 调整顺序（会删除已连接的线，且重连会因字符串 id 静默失败），
-            // 改为数组层面移动端口并同步修正 link 的 target_slot。
+            // 第四步：背景端口置末。removeInput 会删已连线（重连还因字符串 id 静默失败），
+            // 故数组内移动端口并同步修正 link 的 target_slot。
             const bgIdx = self.inputs.findIndex(inp => inp.name === bgName);
             if (bgIdx !== -1) {
                 const bgInput = self.inputs[bgIdx];
@@ -137,7 +134,6 @@ function registerYuanTool(nodeType, portMeta) {
                             if (l) l.target_slot--;
                         }
                     }
-                    // 追加到末尾
                     self.inputs.push(bgInput);
                     if (bgInput.link != null) {
                         const l = app.graph.links[bgInput.link];
@@ -171,8 +167,7 @@ function registerYuanTool(nodeType, portMeta) {
             app.graph.setDirtyCanvas(true, true);
         };
 
-        // 调度到下一 tick 再同步：生命周期回调中 graph.links 可能尚未挂到 input.link 上，
-        // 立即执行会误判递进端口、slot 错位，导致切换工作流时断开
+        // 下一 tick 再同步：生命周期回调中 graph.links 尚未挂到 input.link，立即执行会误判端口、slot 错位致切换工作流断开
         const scheduleSync = (mode) => {
             clearTimeout(self._syncTimer);
             self._syncTimer = setTimeout(() => syncPortsReal(mode), 0);
@@ -225,16 +220,15 @@ function registerYuanTool(nodeType, portMeta) {
     };
 }
 
-// ==================== Yuan_MiniMaxH3Video（模式切换 + 递进显示动态端口）====================
-// 与后端 MiniMax_H3.py 中的常量保持一致
+// ---------- Yuan_MiniMaxH3Video：模式切换 + 递进显示动态端口（常量对齐后端 MiniMax_H3.py） ----------
 const MINIMAX_MODE_REF = "参考图生视频";
 const MINIMAX_MODE_GUIDE = "数字人";
 
 const MINIMAX_I2V_INPUTS = ["first_frame", "last_frame"];
-const MINIMAX_REF_BASE_INPUTS = ["audio_vae", "ref_images"];  // ref_images：图像列表端口（多图 batch）
+const MINIMAX_REF_BASE_INPUTS = ["audio_vae", "ref_images"]; // ref_images：图像列表端口（多图 batch）
 // 数字人模式：仅引导端口（audio_vae 与参考模式共用），不显示首/尾帧
 const MINIMAX_GUIDE_INPUTS = ["audio_vae", "guide_image", "guide_audio"];
-// 递进组：前一端口连接后才显示下一个，最多 3 个
+// 递进组：前一端口连接后才显示下一个
 const MINIMAX_REF_CHAINS = [
     ["ref_video_1", "ref_video_2", "ref_video_3"],
     ["ref_video_audio_1", "ref_video_audio_2", "ref_video_audio_3"],
@@ -394,7 +388,7 @@ function registerYuanMiniMaxH3Video(nodeType, portMeta) {
             }
         };
 
-        // 调度到下一 tick 再同步：links 可能尚未挂到 input.link 上，立即执行会误判端口
+        // 下一 tick 再同步：links 可能尚未挂到 input.link，立即执行会误判端口
         const scheduleSync = () => {
             clearTimeout(self._syncTimer);
             self._syncTimer = setTimeout(syncPortsReal, 0);
@@ -443,13 +437,11 @@ function registerYuanMiniMaxH3Video(nodeType, portMeta) {
     };
 }
 
-// ==================== resize_type 条件参数（RTX 视频放大 / H3 放大 / 缩放Latent（比例）通用）====================
-// 缩放方式为「按倍数缩放」时只显示 scale，为「目标尺寸」时只显示 width/height
+// ---------- resize_type 条件显隐（RTX 放大 / H3 放大 / Latent 比例缩放通用） ----------
 function registerResizeTypeConditionalWidgets(nodeType) {
     const UPSCALE_BY = "按倍数缩放";
 
-    // 根据 resize_type 切换 scale / width / height 的显隐
-    // 只隐藏不删除，避免 widgets_values 索引错位
+    // 按 resize_type 切换 scale/width/height 显隐：按倍数缩放⇔scale，目标尺寸⇔width/height（只隐藏不删，避免 widgets_values 索引错位）
     const syncResizeWidgets = (self) => {
         const resizeWidget = self.widgets.find(w => w.name === "resize_type");
         if (!resizeWidget) return;
@@ -491,8 +483,7 @@ function registerResizeTypeConditionalWidgets(nodeType) {
         return r;
     };
 
-    // V3 (Nodes 2.0)：Vue 下拉组件直接改 widget.value、不走原生 callback，
-    // 每帧轻量比对 resize_type 值，变化即同步显隐（V2 下与 callback 路径幂等）
+    // V3 (Nodes 2.0)：Vue 下拉直接改 widget.value 不走原生 callback，每帧轻量比对值变化即同步显隐（V2 下与 callback 路径幂等）
     const onDrawForeground = nodeType.prototype.onDrawForeground;
     nodeType.prototype.onDrawForeground = function () {
         const r = onDrawForeground ? onDrawForeground.apply(this, arguments) : undefined;
@@ -514,8 +505,7 @@ function yuanHideWidget(w) {
     w.computeSize = () => [0, -4];
 }
 
-// 确保某输入端口存在（用于模式切换重建被移除的端口）。
-// widgetName 非空表示该端口绑定同名 widget（V3 下据此把参数渲染为 widget 而非可连端口）
+// 确保输入端口存在（重建被移除的端口）；widgetName 非空表示该端口绑定同名 widget（V3 下据此渲染为 widget 而非可连端口）
 function yuanEnsureInput(node, name, type, opts, widgetName) {
     if (node && node.inputs && node.inputs.find((i) => i.name === name)) return;
     node.addInput(name, type, opts || {});
@@ -543,8 +533,7 @@ function yuanIsV3Node(node) {
     return false;
 }
 
-// V3 下被前端隐藏的 widget 会显示为空端口占位把节点拉长，主动移除对应输入端口
-// （保留真实可连接端口；已有连线的端口保留不删，避免破坏连接）
+// V3 下被隐藏的 widget 会留空端口占位拉长节点，主动移除对应输入端口（有连线的保留，避免破坏连接）
 function yuanRemoveHiddenWidgetPorts(node, names) {
     if (!node || !Array.isArray(node.inputs) || !yuanIsV3Node(node)) return;
     for (let i = node.inputs.length - 1; i >= 0; i--) {
@@ -564,8 +553,7 @@ function yuanH3LinkObj(graph, id) {
     return links[id] || null;
 }
 
-// 把「H3 运动上下文 → 裁剪帧数 → H3 运动裁剪」链路上裁剪节点的「存储位置」
-// 同步到本节点的隐藏「存储位置」widget（只在值不同时写入并重绘）
+// 把裁剪链路上 Trim 节点的「存储位置」同步到本节点隐藏 widget（值不同才写入并重绘）
 function yuanH3SyncStorageFromTrim(node) {
     if (!node || !app || !app.graph || !Array.isArray(node.outputs)) return;
     const out = node.outputs[1]; // 索引 1 = 裁剪帧数
@@ -587,8 +575,18 @@ function yuanH3SyncStorageFromTrim(node) {
 
 function registerYuanH3MotionContext(nodeType) {
     const HINT_HEIGHT = 20; // 提示行预留高度
-    const PORT_NAME = "上下文潜空间"; // 随模式显隐的真实数据端口
-    const SEQ_NAME = "片段序号"; // 仅自动索引模式显示
+    const PORT_IMG = "上下文图像"; // 随模式显隐的真实数据端口（端口模式）
+    const PORT_AUD = "上下文音频"; // 随模式显隐的真实数据端口（端口模式）
+    const MODE_VALUES = ["上传", "端口", "自动索引"];
+
+    // combo 自愈：历史错位曾致误删「片段序号」端口、GetNode 连线永久丢失；无效值一律重置为 fallback 并返回归一化结果
+    const normalizeCombo = (widget, values, fallback) => {
+        if (!widget) return fallback;
+        const v = String(widget.value == null ? "" : widget.value).trim();
+        if (values.indexOf(v) !== -1) return v;
+        widget.value = fallback;
+        return fallback;
+    };
 
     const origOnExecuted = nodeType.prototype.onExecuted;
     nodeType.prototype.onExecuted = function (data) {
@@ -615,8 +613,7 @@ function registerYuanH3MotionContext(nodeType) {
         return size;
     };
 
-    // 在节点底部绘制单行提示（不可编辑）。绘制前做一次「存储位置」轻量同步，
-    // 并比对「模式」值（V3 下 Vue 下拉不走原生 callback，值变化即触发显隐同步）
+    // 节点底部绘提示；顺带轻量同步「存储位置」、比对「模式」值（V3 下拉不走原生 callback，值变即同步）
     const origOnDrawForeground = nodeType.prototype.onDrawForeground;
     nodeType.prototype.onDrawForeground = function (ctx) {
         yuanH3SyncStorageFromTrim(this);
@@ -636,19 +633,24 @@ function registerYuanH3MotionContext(nodeType) {
         ctx.restore();
     };
 
-    // 工作流加载时清除提示（提示由运行时生成，不随工作流保存），
-    // 并按「模式」重建显隐、移除被隐藏 widget 的空端口占位、同步存储位置
+    // 加载时清提示（运行时生成，不随工作流保存），并按「模式」重建显隐、清空占位、同步存储位置
     const onConfigure = nodeType.prototype.onConfigure;
     nodeType.prototype.onConfigure = function (info) {
         const r = onConfigure ? onConfigure.apply(this, arguments) : undefined;
         this._h3Hint = null;
+        // combo 自愈：历史错位工作流（widget 值前移）会把别的参数值塞进 combo（如模式="H3-Mubu"），
+        // 重置默认值防止模式误判与序列化固化错位
+        const w = (name) => this.widgets && this.widgets.find((x) => x.name === name);
+        normalizeCombo(w("模式"), MODE_VALUES, "自动索引");
+        normalizeCombo(w("上下文长度"), ["5", "22", "39", "56"], "5");
+        normalizeCombo(w("音频上下文长度"), ["0", "5", "22", "39", "56"], "5");
         if (this._syncModeReal) this._syncModeReal();
         yuanRemoveHiddenWidgetPorts(this, ["存储位置", "手动上传"]);
         yuanH3SyncStorageFromTrim(this);
         return r;
     };
 
-    // 输入端口连接/断开时（尤其「上下文潜空间」在端口模式下的连线）重建显隐
+    // 输入端口连接/断开时（尤其「上下文图像/上下文音频」在端口模式下的连线）重建显隐
     const onConnectionsChange = nodeType.prototype.onConnectionsChange;
     nodeType.prototype.onConnectionsChange = function (type, slot, connected, link_info, input_or_output) {
         const r = onConnectionsChange ? onConnectionsChange.apply(this, arguments) : undefined;
@@ -688,7 +690,7 @@ function registerYuanH3MotionContext(nodeType) {
         // 上传按钮 input 须挂到 DOM 且不能用 display:none，否则部分浏览器会拦截 click() 弹框
         const fileInput = document.createElement("input");
         fileInput.type = "file";
-        fileInput.accept = ".safetensors";
+        fileInput.accept = ".mp4,.safetensors";
         Object.assign(fileInput.style, {
             position: "absolute",
             width: "1px",
@@ -704,22 +706,13 @@ function registerYuanH3MotionContext(nodeType) {
             if (!file) return;
             btn.name = "上传中…";
             try {
-                const resp = await yuanH3LatentUploadFile(file, (done, total) => {
-                    btn.name = `上传潜空间 ${done}/${total}`;
+                const resp = await yuanH3ContextUploadFile(file, (done, total) => {
+                    btn.name = `上传上下文 ${done}/${total}`;
                 });
                 if (!resp || !resp.name) {
                     throw new Error((resp && resp.error) || "上传失败：服务器未返回文件名");
                 }
                 if (manualWidget) manualWidget.value = resp.name;
-                // 上传的是上一片段潜空间：音频上下文置 0 防上一片段声音污染本片段
-                const audioCtxWidget = self.widgets &&
-                    self.widgets.find((w) => w.name === "音频上下文长度");
-                if (audioCtxWidget && String(audioCtxWidget.value) !== "0") {
-                    audioCtxWidget.value = "0";
-                    if (typeof audioCtxWidget.callback === "function") {
-                        try { audioCtxWidget.callback(); } catch (_) {}
-                    }
-                }
                 self._yuanH3Uploaded = true;
                 btn.name = "上传完毕";
                 self.setDirtyCanvas(true, true);
@@ -728,7 +721,7 @@ function registerYuanH3MotionContext(nodeType) {
             } finally {
                 // 只有未成功上传时才把按钮复位；成功上传后保持「上传完毕」
                 if (!self._yuanH3Uploaded) {
-                    setTimeout(() => { btn.name = "上传潜空间"; }, 2000);
+                    setTimeout(() => { btn.name = "上传上下文"; }, 2000);
                 }
             }
         });
@@ -737,9 +730,8 @@ function registerYuanH3MotionContext(nodeType) {
             fileInput.value = ""; // 允许重复选择同一文件时仍触发 change
             fileInput.click();
         };
-        const btn = this.addWidget("button", "上传潜空间", null, btnClicked);
-        // 防抖：V3 下 widget 回调 + 按钮 DOM 可能同时收到点击，去重防双弹框。
-        // 但只有真正从回调里 click()，才是用户手势链内的调用，浏览器才放行弹框。
+        const btn = this.addWidget("button", "上传上下文", null, btnClicked);
+        // 防抖：V3 下 widget 回调 + 按钮 DOM 可能双触发双弹框；且只有回调内 click() 才是浏览器放行弹框的用户手势链
         let _btnLastClickMs = 0;
         const btnSafeClicked = () => {
             const now = Date.now();
@@ -767,91 +759,70 @@ function registerYuanH3MotionContext(nodeType) {
             if (self._syncing) return;
             self._syncing = true;
             try {
-                const mode = modeWidget ? modeWidget.value : "自动索引";
+                // 模式值自愈：无效值（历史错位遗留，如模式="H3-Mubu"）兜底为自动索引，防误判触发端口移除
+                const mode = normalizeCombo(modeWidget, MODE_VALUES, "自动索引");
                 self._lastModeValue = mode;
                 const isUpload = mode === "上传";
                 const isPort = mode === "端口";
                 const isAuto = mode === "自动索引";
 
-                // 1) 上下文潜空间 端口显隐（离开时保存连接，返回时恢复）
-                if (isPort) {
-                    if (!(self.inputs && self.inputs.find((i) => i.name === PORT_NAME))) {
-                        yuanEnsureInput(self, PORT_NAME, "LATENT", {
-                            shape: 7, optional: true, label: "上下文潜空间",
-                        });
-                        const saved = self._yuanH3SavedPortLink;
-                        self._yuanH3SavedPortLink = null;
-                        if (saved && app && app.graph && typeof app.graph.getNodeById === "function") {
-                            const inp = self.inputs.find((i) => i.name === PORT_NAME);
-                            const origin = app.graph.getNodeById(saved.origin_id);
-                            const ts = self.inputs.indexOf(inp);
-                            if (origin) { try { origin.connect(saved.origin_slot, self, ts); } catch (_) {} }
+                // 1) 上下文图像/上下文音频 端口显隐（离开时保存连接，返回时恢复）
+                const portSync = (name, type, label, savedKey) => {
+                    if (isPort) {
+                        if (!(self.inputs && self.inputs.find((i) => i.name === name))) {
+                            yuanEnsureInput(self, name, type, {
+                                optional: true, label,
+                            });
+                            const saved = self[savedKey];
+                            self[savedKey] = null;
+                            if (saved && app && app.graph && typeof app.graph.getNodeById === "function") {
+                                const inp = self.inputs.find((i) => i.name === name);
+                                const ts = self.inputs.indexOf(inp);
+                                const origin = app.graph.getNodeById(saved.origin_id);
+                                if (origin) { try { origin.connect(saved.origin_slot, self, ts); } catch (_) {} }
+                            }
+                        }
+                    } else {
+                        const inp = self.inputs && self.inputs.find((i) => i.name === name);
+                        if (inp && inp.link != null) {
+                            const l = yuanH3LinkObj(app.graph, inp.link);
+                            if (l) self[savedKey] = { origin_id: l[1], origin_slot: l[2] };
+                        }
+                        if (inp) {
+                            const idx = self.inputs.findIndex((i) => i.name === name);
+                            if (idx !== -1) self.removeInput(idx);
                         }
                     }
-                } else {
-                    const inp = self.inputs && self.inputs.find((i) => i.name === PORT_NAME);
-                    if (inp && inp.link != null) {
-                        const l = yuanH3LinkObj(app.graph, inp.link);
-                        if (l) self._yuanH3SavedPortLink = { origin_id: l[1], origin_slot: l[2] };
-                    }
-                    if (inp) {
-                        const idx = self.inputs.findIndex((i) => i.name === PORT_NAME);
-                        if (idx !== -1) self.removeInput(idx);
-                    }
-                }
+                };
+                portSync(PORT_IMG, "IMAGE", "上下文图像", "_yuanH3SavedImgLink");
+                portSync(PORT_AUD, "AUDIO", "上下文音频", "_yuanH3SavedAudLink");
 
-                // 2) 片段序号 port+widget 显隐：仅自动索引显示。
-                // 上传/端口模式下它完全无关（上传模式用手动文件、端口模式用
-                // 端口潜空间），即使有连线也整端口移除，切回自动索引时恢复连接
-                // （与「上下文潜空间」端口的保存/恢复逻辑一致）。
+                // 2) 片段序号仅自动索引显示；端口常驻、只隐藏 widget——动态移除绑 widget 的端口
+                // 曾致保存丢值错位、删掉接好的 GetNode 连线（实例级连接不随序列化，切换即永久丢失）。
+                // 后端非自动索引模式下忽略此参数，常驻无副作用
                 if (isAuto) {
-                    if (!(self.inputs && self.inputs.find((i) => i.name === SEQ_NAME))) {
-                        yuanEnsureInput(self, SEQ_NAME, "INT",
-                            { default: 1, min: 0, max: 9999 }, SEQ_NAME);
-                        const saved = self._yuanH3SavedSeqLink;
-                        self._yuanH3SavedSeqLink = null;
-                        if (saved && app && app.graph && typeof app.graph.getNodeById === "function") {
-                            const inp = self.inputs.find((i) => i.name === SEQ_NAME);
-                            const ts = self.inputs.indexOf(inp);
-                            const origin = app.graph.getNodeById(saved.origin_id);
-                            if (origin) { try { origin.connect(saved.origin_slot, self, ts); } catch (_) {} }
-                        }
-                    }
                     if (seqWidget) seqWidget.hidden = false;
                 } else {
-                    // 端口移除前先把 widget 值归一化为合法整数：端口被移除后，
-                    // 该参数由 widget 值参与 ComfyUI 类型校验，其残留的空串/
-                    // 无效值会报"输入值类型错误"。上传/端口模式下后端完全忽略
-                    // 此参数，归一化无任何副作用。
+                    // 隐藏前把 widget 值归一化为合法整数：残留空串会报"输入值类型错误"
                     if (seqWidget) {
                         const n = parseInt(String(seqWidget.value).trim(), 10);
                         seqWidget.value = isNaN(n) ? 1 : Math.max(0, Math.min(9999, n));
+                        seqWidget.hidden = true;
                     }
-                    const inp = self.inputs && self.inputs.find((i) => i.name === SEQ_NAME);
-                    if (inp && inp.link != null) {
-                        const l = yuanH3LinkObj(app.graph, inp.link);
-                        if (l) self._yuanH3SavedSeqLink = { origin_id: l[1], origin_slot: l[2] };
-                    }
-                    if (inp) {
-                        const idx = self.inputs.findIndex((i) => i.name === SEQ_NAME);
-                        if (idx !== -1) self.removeInput(idx);
-                    }
-                    if (seqWidget) seqWidget.hidden = true;
                 }
 
-                // 3) 上传潜空间 按钮显隐：仅上传模式显示
-                // 按钮隐藏须用 hidden+disabled（type="hidden"+computeSize 会在恢复后丢点击绑定）
+                // 3) 上传按钮仅上传模式显示；隐藏须用 hidden+disabled（type="hidden"+computeSize 恢复后丢点击绑定）
                 if (btn) {
                     btn.hidden = !isUpload;
                     btn.disabled = !isUpload;
                 }
 
-                // 4) 离开上传模式：清除手动上传值，重置按钮文本（覆盖/清除之前的 latent）
+                // 4) 离开上传模式：清除手动上传值，重置按钮文本（覆盖/清除之前的媒体）
                 if (!isUpload) {
                     self._yuanH3Uploaded = false;
                     if (manualWidget && manualWidget.value) manualWidget.value = "";
-                    if (btn && btn.name && btn.name.indexOf("上传潜空间") === -1 && btn.name.indexOf("上传") !== -1) {
-                        btn.name = "上传潜空间";
+                    if (btn && btn.name && btn.name.indexOf("上传上下文") === -1 && btn.name.indexOf("上传") !== -1) {
+                        btn.name = "上传上下文";
                     }
                 }
 
@@ -878,10 +849,9 @@ function registerYuanH3MotionContext(nodeType) {
             };
         }
 
-        // 初始同步一次「存储位置」（可能「裁剪帧数」尚未连线，连线后由 onDrawForeground 持续推进）
+        // 初始同步「存储位置」（未连线时由 onDrawForeground 持续推进）；加载时 Trim 链可能未建好，
+        // 故延迟重试数次防参数错位导致"未找到片段 N 文件"
         yuanH3SyncStorageFromTrim(this);
-        // 工作流加载时链路可能尚未建立（Trim 节点后配置），延迟重试几次确保
-        // 「存储位置」从裁剪节点同步到位，避免因参数错位导致的"未找到片段 N 文件"
         if (!self._yuanH3SyncRetried) {
             self._yuanH3SyncRetried = true;
             const retry = () => {
@@ -896,11 +866,10 @@ function registerYuanH3MotionContext(nodeType) {
     };
 }
 
-// ==================== 潜空间手动上传（分块上传 .safetensors） ====================
+// ==================== 上传上下文媒体（分块上传 .mp4，兼容旧版 .safetensors） ====================
 
-async function yuanH3LatentUploadFile(file, onProgress) {
-    // 分块上传潜空间文件到后端 /yuan_h3_motion_upload_latent
-    // （避免单次请求超出服务端 body 上限），最后一块的响应携带 {"name": "..."}
+async function yuanH3ContextUploadFile(file, onProgress) {
+    // 分块上传到 /yuan_h3_motion_upload_latent（防单次请求超 body 上限），末块响应携带 {"name": "..."}
     const CHUNK_SIZE = 4 * 1024 * 1024;
     return uploadChunked(file, {
         chunkSize: CHUNK_SIZE,
