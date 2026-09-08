@@ -36,10 +36,7 @@ def _images_batch_signature(tensor):
 
 
 def _save_images_batch_with_sig(images_tensor):
-    """将 images batch 经 PreviewImage 节点落盘为预览图，返回带 sig 的 UI 条目列表。
-
-    sig 作为图像唯一标识，保证前端调换 batch 顺序时 transforms 仍能对应同一张图。
-    """
+    """将 images batch 经 PreviewImage 落盘为预览图并返回 UI 条目；为每个条目附加内容签名 sig，作为图像唯一标识，保证前端调换 batch 顺序时 transforms 仍对应同一张图。"""
     if images_tensor is None:
         return []
     try:
@@ -101,11 +98,8 @@ class Yuan_Canvas:
     CATEGORY = "Yuan Tool/画布"
 
     DESCRIPTION = (
-        "画布合成节点（V3）- 自包含。\n"
-        "- 将一组图像（batch）作为独立图层传入\n"
-        "- 在内嵌编辑器中可视化放置、旋转、缩放\n"
-        "- 缓冲区（padding）可用于暂存不想导出的素材\n"
-        "- continue 仅刷新画布读取上游输入；合成结果自动上传，直接运行/预览即可输出"
+        "画布合成节点（V3，自包含）：将一组图像作为独立图层传入内嵌编辑器，可视化放置/旋转/缩放后合成导出为单一 IMAGE。\n"
+        "缓冲区（padding）可暂存不想导出的素材；continue 仅刷新画布读取上游输入，合成结果自动上传。"
     )
 
     def composite(self, **kwargs):
@@ -118,13 +112,11 @@ class Yuan_Canvas:
         height = kwargs.get('height', 512)
         padding = kwargs.get('padding', 100)
 
-        # 后端不处理图像数据，前端直接从上游节点获取图像。
-        # 图像内容签名仅用于 config 变更检测和 IS_CHANGED。
+        # 后端不处理图像数据（前端直接从上游节点取图），图像内容签名仅用于变更检测/IS_CHANGED
         bg_image = kwargs.get('bg_image')
         images_tensor = kwargs.get('images')
 
-        # 构建 config 字典（用于变更检测）
-        # 用图像内容签名替代 base64 字符串，避免每次落盘 filename 变化导致误判
+        # config 仅用于变更检测：以图像内容签名替代 base64 字符串，避免落盘 filename 变化导致误判
         config = {
             "node_id": node_id,
             "width": width,
@@ -137,8 +129,7 @@ class Yuan_Canvas:
         configChanged = self.configCache != config
         self.configCache = config
 
-        # 始终落盘 images batch，确保前端总能获取图像；
-        # 前端按 configChanged 与画布是否已有图像决定是否重新下载
+        # 始终落盘 images batch 供前端获取；前端按 configChanged 与画布是否已有图像决定是否重新下载
         images_entries = _save_images_batch_with_sig(images_tensor)
         bg_entries = _save_images_batch_with_sig(bg_image)
 

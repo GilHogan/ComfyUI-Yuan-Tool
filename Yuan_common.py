@@ -1,12 +1,4 @@
-"""Yuan 工具公共函数：供各模块复用的通用后端工具。
-
-集中放置被多个函数/多个后端文件重复使用的逻辑，避免散落复制：
-- 分块上传（video / H3 潜空间上传共用）
-- 磁盘 JSON 缓存读写
-- 媒体路径解析
-- PyAV 容器视频时长获取
-- 输入目录文件枚举过滤
-"""
+"""Yuan 工具公共函数：分块上传、磁盘 JSON 缓存、媒体路径解析、PyAV 视频时长、输入目录文件枚举。"""
 
 import os
 import asyncio
@@ -82,17 +74,9 @@ def list_input_files(content_types, exts):
 
 
 async def handle_chunk_upload(request, upload_dir, normalize_name=None, validate=None, response_name=None, on_complete=None):
-    """通用分块上传（aiohttp 路由）。
+    """通用分块上传（aiohttp 路由）：解析 multipart（file/filename/chunk_index/total_chunks），按块写入 upload_dir 并返回统一 JSON。
 
-    解析 multipart 表单（file/filename/chunk_index/total_chunks），按 chunk_index
-    以追加/新建模式把块写入 upload_dir，返回统一的 JSON 响应，写盘放到线程池避免阻塞事件循环。
-
-    参数：
-        upload_dir      目标目录（自动创建）。
-        normalize_name  由原始 filename -> 存储文件名；默认 os.path.basename。
-        validate        校验函数，入参为写盘绝对路径，返回错误 web.Response 或 None（None 通过）。
-        response_name   末块完成时返回给前端的文件名（子目录前缀场景）；默认取存储文件名。
-        on_complete     可选，末块写入后回调（可 async），入参为写盘绝对路径，返回 dict 并入响应。
+    写盘放入线程池避免阻塞事件循环；validate 可返回错误响应拦截、response_name 重命名返回文件名、on_complete 末块后追加返回字段（可 async）。
     """
     post = await request.post()
     file = post.get("file")

@@ -357,8 +357,6 @@ def _build_segment_bounds(video_path, actual_start_time, actual_end_time, out_fp
             merged.pop()
         merged.append(bounds[-1])
         bounds = merged
-    if len(bounds) < 2:
-        bounds = [0, total_out]
 
     # 长片段细分：边界间超过 15 秒的片段按约 15 秒自动均分
     max_seg_sec = 15.0
@@ -382,9 +380,9 @@ def _build_segment_bounds(video_path, actual_start_time, actual_end_time, out_fp
 
 class YuanVideoUI:
     DESCRIPTION = (
-        "Yuan 加载视频：内置视频预览与时间轴裁剪工具。支持从 input 目录或本地路径加载视频，"
-        "按时间/帧两种显示模式裁剪起止范围，可选按镜头智能分段输出指定分段；"
-        "输出提取到的图像序列、音频、帧数与分段总数。"
+        "Yuan 加载视频：内置预览与时间轴裁剪，可从 input 目录或本地路径加载；"
+        "按时间/帧裁剪起止，可选按镜头智能分段输出；"
+        "输出图像序列、音频、帧数与分段总数。"
     )
 
     @classmethod
@@ -432,15 +430,15 @@ class YuanVideoUI:
             empty_audio = {"waveform": torch.zeros((1, 1, 44100)), "sample_rate": 44100}
             return (empty_image, empty_audio, 0, 1)
 
-        # 1. 优先尝试绝对路径，其次使用 ComfyUI 标准路径解析
+        # 路径解析：优先绝对路径，其次使用 ComfyUI 标准路径
         video_path = resolve_media_path(视频)
         if not video_path:
             raise FileNotFoundError(f"视频文件未找到: {视频}")
 
-        # 打开容器以读取流和元数据
+        # 打开容器读取流与元数据
         container = av.open(video_path)
 
-        # 确定视频流和时长
+        # 视频流与总时长
         video_stream = container.streams.video[0] if len(container.streams.video) > 0 else None
         video_duration = 0
         if video_stream and video_stream.duration and video_stream.time_base:
@@ -498,8 +496,6 @@ class YuanVideoUI:
         # 最长边等比缩放：以裁剪后原始尺寸的最长边为基准，等比缩放另一条边；
         # 值为 0 表示保持原始尺寸不缩放。
         scale_w, scale_h = cropped_orig_w, cropped_orig_h
-        pad_left = pad_right = pad_top = pad_bottom = 0
-        crop_left = crop_right = crop_top = crop_bottom = 0
         if 最长边 > 0 and cropped_orig_w > 0 and cropped_orig_h > 0:
             ratio = 最长边 / max(cropped_orig_w, cropped_orig_h)
             scale_w = max(2, int(round(cropped_orig_w * ratio)))
@@ -585,7 +581,6 @@ class YuanVideoUI:
             # 复用 resize 目标缓冲，避免每帧重新分配大块内存（减少 Windows 堆碎片/内存叠加）
             _resize_dst = None
             if scale_w != cropped_orig_w or scale_h != cropped_orig_h:
-                import cv2
                 _resize_dst = np.zeros((scale_h, scale_w, 3), dtype=np.uint8)
 
             for frame in container.decode(video_stream):
@@ -622,11 +617,6 @@ class YuanVideoUI:
                     import cv2
                     cv2.resize(frame_rgb, (scale_w, scale_h), interpolation=cv2.INTER_AREA, dst=_resize_dst)
                     frame_rgb = _resize_dst
-
-                if crop_left > 0 or crop_top > 0 or crop_right > 0 or crop_bottom > 0:
-                    frame_rgb = frame_rgb[crop_top:scale_h-crop_bottom, crop_left:scale_w-crop_right, :]
-                if pad_left > 0 or pad_top > 0 or pad_right > 0 or pad_bottom > 0:
-                    frame_rgb = np.pad(frame_rgb, ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0)), mode='constant', constant_values=0)
 
                 # 基于时间戳精确复帧以满足强制帧率；结束边界严格小于，避免在切片边界多取一帧。
                 # 智能分段模式按目标帧数精确输出，与检测接口 frames 一致；其余模式维持浮点时间边界判断。
@@ -675,7 +665,7 @@ class YuanVideoUI:
             # 空切片的回退
             image_tensor = torch.zeros((1, 512, 512, 3), dtype=torch.float32)
 
-        # 3. 提取音频 (PyAV)
+        # 提取音频 (PyAV)
         audio_dict = {"waveform": torch.zeros((1, 1, 44100)), "sample_rate": 44100} # 默认空音频
 
         if len(container.streams.audio) > 0:
@@ -753,11 +743,10 @@ class YuanVideoUI:
             pass
         gc.collect()
 
-        # 输出组装：智能分段模式下解码范围即所选分段，直接输出
+        # 输出组装
         output_seg_count = seg_count
 
         if 输出模式 == "智能分段输出":
-            # 解码范围就是所选分段，无需再切片
             final_duration_sec = float(max(0.0, decode_end_time - decode_start_time))
             frame_count = int(image_tensor.shape[0])
         else:

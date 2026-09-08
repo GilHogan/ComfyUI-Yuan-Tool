@@ -87,9 +87,9 @@ class YuanAudioList:
 
     CATEGORY = _CATEGORY
     DESCRIPTION = (
-        "音频列表：从输入目录加载音频文件（前端方块滑轨选择/上传，上限 30 个），"
-        "按筛选索引输出一个音频列表。留空输出全部；填索引（从 0 起，逗号分隔）"
-        "可单选或多选，如 0 或 0,2,5；无效索引会被忽略，全部无效时回退输出全部。"
+        "音频列表：从输入目录加载音频（前端滑轨选择/上传，上限 30 个），"
+        "按筛选索引输出；留空输出全部，索引从 0 起逗号分隔，"
+        "无效忽略、全部无效时回退全部。"
     )
 
     @classmethod
@@ -103,11 +103,7 @@ class YuanAudioList:
                 }),
                 "筛选索引": ("STRING", {
                     "default": "",
-                    "tooltip": (
-                        "按索引筛选输出（参考筛选图像）：从 0 起，逗号分隔，"
-                        "如 0（单选）或 0,2,5（多选）；留空输出全部；"
-                        "无效索引忽略，全部无效时回退全部。索引对应方块上的序号减 1。"
-                    ),
+                    "tooltip": "按索引筛选输出：从 0 起逗号分隔（如 0 单选或 0,2,5 多选）；留空输出全部；无效忽略，全无效回退全部。",
                 }),
             },
         }
@@ -135,7 +131,6 @@ class YuanAudioList:
         if indexes is not None:
             files = [files[i] for i in indexes]
 
-        # 解码文件（失败跳过）
         audios = []
         for name in files:
             try:
@@ -225,10 +220,9 @@ class YuanAudioLoad:
 
     CATEGORY = _CATEGORY
     DESCRIPTION = (
-        "加载音频：内置音频预览、时间轴裁剪与播放控制。\n"
-        "自定义裁切：用开始/结束时间(或拖动时间轴手柄)截取一段。\n"
-        "智能分段：按'分段时长'列表(逗号分隔，如 6,3,5)把 [开始时间, 结束时间] "
-        "窗口切分成若干分段，用小方格显示在时间轴上，配合'分段索引'选择输出的分段。"
+        "加载音频：内置预览、时间轴裁剪与播放控制。\n"
+        "自定义裁切：用开始/结束时间截取一段；\n"
+        "智能分段：按'分段时长'把时间窗口切分为多段，用'分段索引'选择输出。"
     )
 
     @classmethod
@@ -322,7 +316,6 @@ class YuanAudioLoad:
             seg_start = win_start
             seg_end = win_end
 
-        # 秒 -> 采样帧并裁剪
         start_frame = int(seg_start * sample_rate)
         end_frame = int(seg_end * sample_rate)
         start_frame = min(start_frame, waveform.shape[1])

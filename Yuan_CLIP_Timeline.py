@@ -1323,12 +1323,11 @@ class YuanCLIPTimeline:
             "required": {
                 "模型": ("MODEL", {"tooltip": "要补丁的扩散模型"}),
                 "CLIP模型": ("CLIP", {"tooltip": "用于编码提示词的 CLIP 模型"}),
-                "音频VAE": ("VAE", {"tooltip": "Audio VAE，用于生成音频潜空间。video latent 与 audio latent 使用相同的帧数/帧率，保证对齐。"}),
+                "音频VAE": ("VAE", {"tooltip": "Audio VAE，用于生成音频潜空间，与视频潜空间帧数/帧率对齐。"}),
                 "全局提示词": ("STRING", {
                     "multiline": True, "default": "",
-                    "tooltip": "贯穿整个视频的全局提示词。用于锚定持久的角色、物体和场景上下文。"
-                               "@图X=描述 格式的行作为角色定义，同时在 CLIP token 中标记 @图X 位置，"
-                               "由 K/V 视觉特征注入机制把对应 motionSegments 参考帧的视觉特征注入到这些 token 的 K/V。"
+                    "tooltip": "贯穿整个视频的全局提示词，锚定持久的角色、物体和场景上下文。"
+                               "@图X=描述 行定义角色并标记 token，供下游进行 K/V 视觉特征注入。"
                                "示例：\n场景描述\n@图1=角色描述\n@图2=另一角色描述"
                 }),
                 "最大帧数": ("INT", {
@@ -1349,8 +1348,7 @@ class YuanCLIPTimeline:
                 }),
                 "衰减参数": ("FLOAT", {
                     "default": 1e-3, "min": 1e-6, "max": 0.99, "step": 1e-4,
-                    "tooltip": "惩罚衰减参数。低于约 0.1 的值均产生锐利边界（论文默认 0.001）。"
-                               "如需更柔和的过渡，尝试 0.5 或更高值。"
+                    "tooltip": "惩罚衰减参数，越小边界越锐利（默认 0.001）。想更柔和可调到 0.5 以上。"
                 }),
                 "帧率": ("FLOAT", {
                     "default": 24.0, "min": 0.1, "max": 240.0, "step": 0.1,
@@ -1373,11 +1371,11 @@ class YuanCLIPTimeline:
                 "潜空间": ("LATENT", {"tooltip": "潜空间视频 — 从形状读取尺寸。不连接时自动生成 LTXV 空潜空间。"}),
                 "文本输入": ("STRING", {
                     "multiline": True, "default": "",
-                    "tooltip": "按行输入的提示词文本，支持两种模式：\n1. 时间格式（如 \"0-3s 提示词A\"），按指定秒数动态分配帧长\n2. 纯文本行，自动均分到各段落\n连接上游文本输出节点（如 Yuan TXT Splitter）可批量填充。"
+                    "tooltip": "按行输入的提示词。支持时间格式（如 \"0-3s 提示词A\"）动态分配帧长，或纯文本行自动均分；连接上游文本节点可批量填充。"
                 }),
                 "提示词锁定": ("BOOLEAN", {
                     "default": True,
-                    "tooltip": "开启：预览模式：提示词只读不可编辑。\n关闭：各段落可自由编辑，不受 文本输入 影响。"
+                    "tooltip": "开：只读预览，提示词不可编辑。\n关：各段落自由编辑，不受 文本输入 影响。"
                 }),
                 # --- 多媒体引导（与下游 Yuan 引导注入节点配合） ---
                 "引导强度": ("STRING", {
@@ -1421,36 +1419,26 @@ class YuanCLIPTimeline:
                     "tooltip": "使用 IC-LoRA 视频的音频，而非使用音轨。"
                 }),
                 "段落图像": ("IMAGE", {
-                    "tooltip": "段落引导图像输入。支持单张或多张图像（batch）。\n"
-                               "按段落数量自动分配到对应段落：第1张→第1段、第2张→第2段……\n"
-                               "多出段落数量的图像将被截取，不作参考。\n"
-                               "连接后会覆盖编辑器中已上传的引导图。"
+                    "tooltip": "段落引导图像（支持 batch），按顺序分配到各段落（第1张→第1段……），多出的被截取。连接后覆盖编辑器已上传的引导图。"
                 }),
                 "运动图像": ("IMAGE", {
-                    "tooltip": "IC-LoRA 轨道图像/视频输入。支持单张或多张图像（batch）。\n"
-                               "每张图像自动创建为一个静态段，帧数由 运动图像帧数 控制。\n"
-                               "连接后会覆盖编辑器中已有的运动段。"
+                    "tooltip": "IC-LoRA 轨道图像/视频（支持 batch），每张自动成为一个静态段，帧数由 运动图像帧数 控制；连接后覆盖编辑器已有运动段。"
                 }),
                 "运动图像帧数": ("INT", {
                     "default": 16, "min": 8, "max": 32, "step": 8,
                     "tooltip": "每张运动图像的帧数（8/16/24/32）。"
                 }),
                 "音频输入": ("AUDIO", {
-                    "tooltip": "音频输入端口。连接上游音频节点（如 LoadAudio）后，"
-                               "音频会自动作为一条音频段添加到时间轴音频轨道，按原始时长分配帧数。\n"
-                               "连接后会覆盖编辑器中已上传的音频段（仅在锁定状态下生效）。"
+                    "tooltip": "音频输入端口。连接上游音频节点后自动作为音频段加入时间轴音轨，按原始时长分配帧数；仅锁定状态生效，覆盖编辑器已上传音频。"
                 }),
                 # --- Ref Guidance：参考 cond 引导（在下游 Yuan 引导注入节点接管 attn2）---
                 "参考强度": ("FLOAT", {
                     "default": 0.35, "min": 0.0, "max": 1.0, "step": 0.001,
-                    "tooltip": "K/V 视觉特征注入强度：把 motionSegments 参考帧的视觉特征注入到对应 @图X token 的 K/V。"
-                               "k[marker] = k[marker]*(1-alpha) + ref_k*alpha。0=不注入。"
-                               "建议 0.3-0.5，确保主体视觉特征一致性。"
+                    "tooltip": "K/V 视觉特征注入强度：将参考帧特征按 alpha 注入 @图X token 的 K/V（0=不注入）。建议 0.3-0.5。"
                 }),
                 "参考阈值": ("FLOAT", {
                     "default": 5.0, "min": 0.0, "max": 10.0, "step": 0.001,
-                    "tooltip": "段内主体抑制：基于 motionSegments 帧范围，段外帧的 @图X token K/V 注入强度衰减系数。"
-                               "越大越宽松（段外衰减弱），越小越严格（段外强抑制）。"
+                    "tooltip": "段内主体抑制的段外衰减系数。越大限制越宽松，越小段外抑制越强。"
                 }),
             },
         }
@@ -1867,7 +1855,6 @@ class YuanCLIPTimeline:
         # --- 自动生成 LTXV 潜空间（未连接 latent 输入时；max_frames 已对齐 stride 8，直接使用） ---
         ltxv_length = max_frames
         if latent is None:
-            # 优先使用引导图像推导的尺寸，否则使用 width/height
             gen_w = derived_w if derived_w > 0 else width
             gen_h = derived_h if derived_h > 0 else height
             latent = _auto_generate_latent(gen_w, gen_h, ltxv_length)

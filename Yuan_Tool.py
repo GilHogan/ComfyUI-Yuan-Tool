@@ -30,8 +30,8 @@ class YuanTool:
             "required": {
                 "width": ("INT", {"default": 736, "min": 32, "max": 8192, "step": 32, "display_name": "宽度", "tooltip": "生成视频宽度（32 的倍数）"}),
                 "height": ("INT", {"default": 1280, "min": 32, "max": 8192, "step": 32, "display_name": "高度", "tooltip": "生成视频高度（32 的倍数）"}),
-                "frame_multiplier": ([1, 8, 16, 24, 32], {"default": 16, "display_name": "每图帧数", "tooltip": "每张图像持续的帧数；16 帧≈每图 0.67 秒。第一组会额外多 1 帧用于 VAE 8 帧分组对齐"}),
-                "list_mode": ("BOOLEAN", {"default": False, "label_on": "列表模式", "label_off": "单帧模式", "display_name": "输入模式", "tooltip": "开启：通过图像列表1..8端口多路批量输入（1、2常显，接满后依次出现后续端口，每路最多 8 张，总共最多 8 张）；关闭：端口 1-8 逐张输入（1、2 常显，前置连满后依次出现后续端口）"}),
+                "frame_multiplier": ([1, 8, 16, 24, 32], {"default": 16, "display_name": "每图帧数", "tooltip": "每张图像的持续帧数（16 帧≈0.67 秒）；第一组额外 +1 帧用于 VAE 8 帧分组对齐"}),
+                "list_mode": ("BOOLEAN", {"default": False, "label_on": "列表模式", "label_off": "单帧模式", "display_name": "输入模式", "tooltip": "开启：图像列表1..8 多路批量输入（每路最多 8 张、总共最多 8 张）；关闭：端口 1-8 逐张输入。端口均递进显示。"}),
             },
             "optional": {
                 "background": ("IMAGE", {"display_name": "背景", "tooltip": "视频背景图像（可留空），尾部附加 frame_multiplier 帧"}),
@@ -54,9 +54,9 @@ class YuanTool:
     CATEGORY = "Yuan Tool/图像"
     DESCRIPTION = (
         "多帧参考节点：将多张主体图像按顺序展开为视频帧（每图帧数固定），"
-        "可选附加背景帧。支持端口 1-8 逐张输入（端口递进显示）或"
-        "图像列表1..8 多路批量输入（每路最多 8 张、总共最多 8 张，端口递进显示）。"
-        "图像列表端口若接收到上游「筛选图像」节点的 64×64 空兜底图，将视为该端口未接入。"
+        "可选附加背景帧。支持端口 1-8 逐张输入或图像列表1..8 多路批量输入"
+        "（每路最多 8 张、总共最多 8 张，端口递进显示）。"
+        "接收上游「筛选图像」节点的 64×64 空兜底图时视为该端口未接入。"
     )
 
     @staticmethod

@@ -18,14 +18,9 @@ class YuanColorMatch:
                 "image_ref": ("IMAGE", {"display_name": "参考图像", "tooltip": "提供色彩分布的参考图像（颜色来源）。"}),
                 "image_target": ("IMAGE", {"display_name": "目标图像", "tooltip": "要被改色的目标图像或视频帧 batch（色彩去往）。"}),
                 "method": (_COLOR_MATCH_METHODS, {"default": 'mkl', "display_name": "匹配方法", "tooltip": (
-                    "色彩迁移算法：\n"
-                    "  mkl         - Monge-Kantorovich 线性化（推荐，稳定）\n"
-                    "  hm          - 直方图匹配\n"
-                    "  reinhard    - Reinhard 等人（均值+方差迁移）\n"
-                    "  mvgd        - 多元高斯分布迁移\n"
-                    "  hm-mvgd-hm  - HM-MVGD-HM 复合\n"
-                    "  hm-mkl-hm   - HM-MKL-HM 复合\n"
-                    "依赖：pip install color-matcher"
+                    "匹配算法：mkl=线性化（推荐）；hm=直方图匹配；"
+                    "reinhard=均值+方差；mvgd=多元高斯分布；"
+                    "hm-mvgd-hm、hm-mkl-hm=复合。依赖需安装 color-matcher"
                 )}),
             },
             "optional": {
@@ -40,9 +35,8 @@ class YuanColorMatch:
     OUTPUT_TOOLTIPS = ("色彩匹配结果图像（与输入 batch 尺寸一致，0..1 float）。",)
     FUNCTION = "colormatch"
     DESCRIPTION = (
-        "色彩匹配：将参考图的色彩分布迁移到目标图。\n"
-        "方法：mkl / hm / reinhard / mvgd / hm-mvgd-hm / hm-mkl-hm。\n"
-        "依赖：pip install color-matcher（https://github.com/hahnec/color-matcher/）。"
+        "色彩匹配：将参考图的色彩分布迁移到目标图，支持 mkl/hm/reinhard/mvgd 等方法，strength 控制混合强度。\n"
+        "依赖：pip install color-matcher。"
     )
 
     def colormatch(self, image_ref, image_target, method, strength=1.0, multithread=True):

@@ -287,9 +287,6 @@ class YuanPanoramaPreview:
         fps_value = 24.0
         # output_current_view=True 输出完整全景图，False 输出当前 3D 裁剪截图
         panorama_mode = bool(output_current_view)
-        # 裁剪分辨率：限制到合法范围
-        view_w = max(64, min(8192, int(view_width or 1024)))
-        view_h = max(64, min(8192, int(view_height or 512)))
         current_view_data = str(current_view_data or "")
 
         if ERP_image is not None:

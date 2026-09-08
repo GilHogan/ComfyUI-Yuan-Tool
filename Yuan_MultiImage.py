@@ -48,9 +48,8 @@ class YuanMultiImage:
     FUNCTION = "load_images"
     CATEGORY = "Yuan Tool/图像"
     DESCRIPTION = (
-        "加载批量图像（多滑轨版）：支持最多 20 个独立滑轨，每个滑轨单独加载批量图像。"
-        "使用 lanczos 插值将宽高向上取整到 16 的倍数。每路输出对应一个滑轨的 batch。"
-        "复刻自 WhatDreamsCost-ComfyUI 的 Multi Image Loader。"
+        "加载批量图像（多滑轨版）：支持最多 20 个独立滑轨，每个滑轨单独加载并输出一路图像 batch，"
+        "宽高用 lanczos 向上取整到 16 的倍数。"
     )
 
     def resize_image(self, image, multiple_of=16):

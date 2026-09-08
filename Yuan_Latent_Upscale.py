@@ -20,7 +20,7 @@ class YuanLatentUpscaleBy:
             "required": {
                 "samples": ("LATENT", {
                     "display_name": "潜空间",
-                    "tooltip": "待缩放的 latent：常规 latent (B,C,H,W)、H3 视频latent (B,C,T,H,W) 或 H3 联合 AV latent（仅缩放视频流）。",
+                    "tooltip": "待缩放 latent：常规 (B,C,H,W)、H3 视频 (B,C,T,H,W) 或 H3 联合 AV（仅缩放视频流）。",
                 }),
                 "upscale_method": (cls.upscale_methods, {
                     "display_name": "缩放方法",
@@ -39,12 +39,12 @@ class YuanLatentUpscaleBy:
                 "width": ("INT", {
                     "default": 1920, "min": 64, "max": 8192, "step": 8,
                     "display_name": "目标宽度",
-                    "tooltip": "目标宽度（像素）：H3 latent (5D) 自动对齐到 16 的倍数再 ÷16，常规 latent (4D) 自动对齐到 8 的倍数再 ÷8。仅在「目标尺寸」模式下生效。",
+                    "tooltip": "目标宽度（像素）：H3 latent 按 16 对齐、常规 latent 按 8 对齐换算。仅在「目标尺寸」模式下生效。",
                 }),
                 "height": ("INT", {
                     "default": 1080, "min": 64, "max": 8192, "step": 8,
                     "display_name": "目标高度",
-                    "tooltip": "目标高度（像素）：H3 latent (5D) 自动对齐到 16 的倍数再 ÷16，常规 latent (4D) 自动对齐到 8 的倍数再 ÷8。仅在「目标尺寸」模式下生效。",
+                    "tooltip": "目标高度（像素）：H3 (5D) 对齐到 16 倍数再 ÷16；常规 (4D) 对齐到 8 倍数再 ÷8。仅「目标尺寸」模式生效。",
                 }),
             }
         }
@@ -55,14 +55,9 @@ class YuanLatentUpscaleBy:
     FUNCTION = "upscale"
     CATEGORY = "Yuan Tool/放大"
     DESCRIPTION = (
-        "缩放Latent（比例）：复刻原生「缩放Latent（比例）」节点（类名与映射键独立，互不影响）。\n"
-        "在原生基础上扩展：兼容 H3 纯视频 latent（5D，仅缩放空间维度）与 H3 联合 AV latent\n"
-        "（NestedTensor，仅缩放视频流、音频流原样保留），可直接与「H3 放大」「RTX 视频放大 (H3)」\n"
-        "节点的 LATENT 输入/输出衔接。\n"
-        "缩放方式与上述两个放大节点一致：「按倍数缩放」（latent 尺寸 × 倍数，支持放大与缩小）\n"
-        "或「目标尺寸」（像素单位：H3 latent 按 16 对齐换算，常规 latent 按 8 对齐换算）。\n"
-        "参数名与 H3 放大后端对齐（resize_type/scale/width/height），前端切换缩放方式时\n"
-        "自动切换「缩放倍数」与「目标宽度/高度」的显隐。"
+        "缩放Latent（比例）：复刻原生节点并扩展，兼容常规 4D、H3 纯视频 latent（5D，仅缩放空间维度）与 H3 联合 AV latent"
+        "（仅缩放视频流、音频原样保留），可直接衔接「H3 放大」「RTX 视频放大 (H3)」。\n"
+        "缩放方式：「按倍数缩放」（×倍，支持放大缩小）或「目标尺寸」（像素，H3 按 16 对齐、常规按 8 对齐换算）。"
     )
 
     def upscale(self, samples, upscale_method, resize_type, scale, width, height):

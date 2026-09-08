@@ -18,8 +18,8 @@ except Exception:  # 旧版 ComfyUI 无 H3 模型模块时用相同数值兜底
     FRAME_RESCALE = 5.0 / 3.0
 
 
-# 旧版核心（< v0.34.0）H3 修复反向移植；新版核心已含修复时自动跳过。
-#   1) PackedLayout 支持首/末帧锚点并保留关键帧音频 latent；2) 关键帧/参考共存时条件与关键帧音频正确合并。
+# 旧版核心（<v0.34.0）H3 缺陷反向移植：PackedLayout 首/末帧锚点与关键帧音频保留、
+# extra_conds 关键帧/参考共存时条件与音频正确合并；新版核心已含修复时自动跳过。
 try:
     import inspect
 
@@ -27,7 +27,7 @@ try:
     import comfy.model_base as _model_base
 
     if "frame_count" in inspect.signature(_h3_model.PackedLayout.__init__).parameters:
-        # 与 Yuan_H3_Motion.py 共享的 ABI 标记（改名须两文件同步）
+        # ABI 标记：以属性形式打在补丁函数上，供外部模块检测本补丁是否已装
         BACKPORT_MARKER_LAYOUT = "_yuan_minimax_h3_v034_layout"
         BACKPORT_MARKER_PAYLOAD = "_yuan_minimax_h3_v034_extra_conds"
 
@@ -304,7 +304,7 @@ class YuanMiniMaxH3Video:
     OUTPUT_TOOLTIPS = ("正向条件（含关键帧/参考潜空间）", "视频+音频联合潜空间")
     FUNCTION = "execute"
     CATEGORY = "Yuan Tool/MiniMax"
-    DESCRIPTION = "MiniMax-H3 视频生成：图生视频（首/尾帧关键帧）、参考图生视频（<Picture>/<Video>/<Audio> 参考）或数字人（引导图像/音频锚定到任意帧）。"
+    DESCRIPTION = "MiniMax-H3 视频生成：支持图生视频、参考图生视频（<Picture>/<Video>/<Audio> 参考）与数字人（引导图像/音频锚定）。"
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -325,14 +325,14 @@ class YuanMiniMaxH3Video:
             "audio_vae": ("VAE", {"optional": True, "display_name": "音频VAE",
                                   "tooltip": "用于编码参考音频的音频 VAE 模型"}),
             "ref_image_size": (["匹配", "最大"], {"default": "匹配", "display_name": "参考图尺寸",
-                "tooltip": "参考图像尺寸策略。'匹配'：将每张参考图（仅缩小、保持宽高比）缩放到生成画面的像素面积；'最大'：使用参考管线的 2048px 短边以获得最佳主体保真度。参考标记会贯穿每个采样步，'最大' 模式可能慢数倍。"}),
+                "tooltip": "参考图缩放策略：'匹配'缩放至画面像素面积（仅缩小、保宽高比）；'最大'用参考管线的 2048px 短边，保真度更高但明显更慢。"}),
             "guide_frame_idx": ("INT", {"default": 0, "min": -9999, "max": 9999, "display_name": "锚定帧",
-                "tooltip": "引导图像/音频锚定的帧位置（仅数字人模式）。负数从视频末尾倒数，如 -1 表示最后一帧"}),
+                "tooltip": "引导图像/音频锚定的帧索引（仅数字人模式）；负数从末尾倒数，-1 即最后一帧"}),
             "ref_images": image_port(
                 "参考图像", f"参考图像列表（可连接多张图像，最多 {REF_IMAGE_PORTS} 张，超出自动切断）"),
             # ---- 数字人模式（Add Guide）----
             "guide_image": image_port("引导图像",
-                "锚定到指定帧的图像或多帧片段（仅数字人模式）。单帧图像直接锚定；多帧批次作为短片锚定，自动向下对齐到 17k+5 帧网格（5、22、39…），不足 5 帧只取首帧"),
+                "锚定到指定帧的图像（仅数字人模式）。多帧批次作为短片锚定并向下对齐到 17k+5 帧网格（5、22、39…），不足 5 帧只取首帧"),
             "guide_audio": audio_port("引导音频",
                 "从锚定帧起对齐的语音/音轨（仅数字人模式），超出视频剩余时长自动截断"),
         }
@@ -349,7 +349,7 @@ class YuanMiniMaxH3Video:
         return {
             "required": {
                 "mode": ([MODE_IMAGE_TO_VIDEO, MODE_REFERENCE, MODE_GUIDE], {"default": MODE_IMAGE_TO_VIDEO,
-                    "display_name": "模式", "tooltip": "生成模式：图生视频（首/尾帧关键帧）、参考图生视频（<Picture>/<Video>/<Audio> 参考）或数字人（引导图像/音频锚定到任意帧，复刻官方 Add Guide）"}),
+                    "display_name": "模式", "tooltip": "生成模式：图生视频（首/尾帧关键帧）、参考图生视频（<Picture>/<Video>/<Audio> 参考）或数字人（引导图像/音频）"}),
                 "clip": ("CLIP", {"display_name": "CLIP", "tooltip": "用于编码提示词的 CLIP 模型"}),
                 "vae": ("VAE", {"display_name": "VAE", "tooltip": "用于编码关键帧/参考图像的 VAE 模型"}),
                 "prompt": ("STRING", {"multiline": True, "dynamicPrompts": True, "display_name": "提示词",
@@ -360,7 +360,7 @@ class YuanMiniMaxH3Video:
                     "display_name": "高度", "tooltip": "视频高度，需为 32 的倍数"}),
                 "length": ("INT", {"default": 124, "min": 5, "max": 3600, "step": 17,
                     "display_name": "时长（帧）",
-                    "tooltip": "24fps 下的视频帧数，会自动向上对齐到模型的 17k+5 帧网格（124≈5秒；训练区间约 124-362，更长未经测试）"}),
+                    "tooltip": "24fps 视频帧数，自动向上对齐到 17k+5 帧网格（124≈5 秒；训练区间约 124-362）"}),
             },
             "optional": optional,
         }
@@ -407,8 +407,7 @@ class YuanMiniMaxH3Video:
         if keyframes:
             for kf in keyframes:
                 kf["latent"] = vae.encode(kf.pop("image"))
-            # minimax_frame_count：v0.34.0 核心已无消费者（PackedLayout 用
-            # resolved_frame_index 原生支持末帧锚点），仅为旧核心兜底保留
+            # minimax_frame_count 仅旧核心(<v0.34.0)消费（新版 PackedLayout 用 resolved_frame_index 支持末帧锚点），保留兜底
             cond = node_helpers.conditioning_set_values(cond, {"minimax_keyframes": keyframes,
                                                                "minimax_frame_count": frame_count})
         return (cond, latent)

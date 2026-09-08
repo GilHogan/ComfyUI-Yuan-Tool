@@ -101,12 +101,8 @@ class Yuan_ImagePoint:
     CATEGORY = "Yuan Tool/图像"
 
     DESCRIPTION = (
-        "图像点处理（复刻自 YuanEditor / Frames Editor）\n"
-        "- 在内嵌画布上为图像标注正面点、负面点与边界框\n"
-        "- 点标注模式：左键添加正面点，右键添加负面点\n"
-        "- 框标注模式：拖拽添加边界框\n"
-        "- 多帧图像可在底部滑块逐帧切换标注\n"
-        "- 输出坐标 JSON 与边界框，供下游节点使用"
+        "图像点处理（复刻自 YuanEditor / Frames Editor）：在内嵌画布上为图像标注正面点/负面点/边界框。\n"
+        "左键添加正面点、右键添加负面点、拖拽添加边界框；多帧可逐帧标注，输出坐标 JSON 与边界框供下游使用。"
     )
 
     def execute(self, images, info, preview_rescale=1.0):
@@ -131,7 +127,6 @@ class Yuan_ImagePoint:
                 box = info.get("bbox", None)
                 frame_index = info.get("frame_index", 0)
 
-                # 将坐标换算回原始尺寸
                 if needs_scaling:
                     if positive_coords is not None:
                         positive_coords = [{"x": coord["x"] * scale_factor, "y": coord["y"] * scale_factor} for coord in positive_coords]
@@ -139,7 +134,6 @@ class Yuan_ImagePoint:
                     if negative_coords is not None:
                         negative_coords = [{"x": coord["x"] * scale_factor, "y": coord["y"] * scale_factor} for coord in negative_coords]
 
-                # 处理边界框
                 bboxes = []
                 if box is not None and len(box) > 0:
                     for i in box:
@@ -155,13 +149,11 @@ class Yuan_ImagePoint:
                             h = i['h']
                         bboxes.append([x, y, x + w, y + h])
 
-                # 转成 JSON 字符串
                 if positive_coords is not None:
                     positive_coords = json.dumps(positive_coords, ensure_ascii=False)
                 if negative_coords is not None:
                     negative_coords = json.dumps(negative_coords, ensure_ascii=False)
 
-        # 无标注时输出空值
         if positive_coords is None:
             positive_coords = ""
         if negative_coords is None:
@@ -176,17 +168,15 @@ class Yuan_ImagePoint:
             new_height = int(height * preview_rescale)
             new_width = int(width * preview_rescale)
 
-            # 转成 PIL 缩放后转回张量
             pil_images = tensor_to_pil(images)
             resized_pil = [img.resize((new_width, new_height), Image.LANCZOS) for img in pil_images]
             preview_images = pil_to_tensor(resized_pil)
 
-        # 计算预览图像张量的哈希
         images_hash = hashlib.md5(preview_images.cpu().numpy().tobytes()).hexdigest()
         rescale_hash = f"{images_hash}_{preview_rescale}"
 
-        # 若图像未变化则复用缓存的预览
         if 'last_images_hash' in self.state and self.state['last_images_hash'] == rescale_hash:
+            # 图像与缩放未变化：复用缓存预览
             preview_str = self.state['cached_preview']
             is_init = False
         else:
@@ -195,7 +185,6 @@ class Yuan_ImagePoint:
                 filename_prefix="ComfyUI_temp_" + ''.join(random.choice("abcdefghijklmnopqrstupvxyz") for _ in range(5)),
             )
             preview_str = json.dumps(preview, ensure_ascii=False)
-            # 缓存预览与哈希
             self.state['last_images_hash'] = rescale_hash
             self.state['cached_preview'] = preview_str
             is_init = True

@@ -7,7 +7,7 @@ class AnyType(str):
         return False
 
 
-# ==== 台词保护：引号对常量与掩码构建（JSON提取 / 文本批量替换 / 分镜角色替换 共用） ====
+# ==== 台词保护：引号对常量与掩码构建（JSON提取 / 文本批量替换 共用） ====
 
 # opening, closing, rank（秩：同秩才能配成一对，避免不同引号互配）
 # 包含 ASCII 半角引号、中文弯引号（""/''）、中文直角引号「」/『』
@@ -73,7 +73,7 @@ def _build_quote_protect_mask(text):
     return mask
 
 
-# <d>...</d> 台词标签（与引号保护叠加，JSON提取 / 分镜角色替换 共用）
+# <d>...</d> 台词标签（与引号保护叠加，JSON提取 的档案匹配与名称替换共用）
 DIALOGUE_TAG_RE = re.compile(r'<d>.*?</d>', re.DOTALL)
 
 
@@ -86,11 +86,15 @@ def _build_dialogue_protect_mask(text):
     return mask
 
 
-# ==== JSON提取：按端口名提取对应字段，全部输出字符串 ====
+# ==== JSON提取：按端口名提取对应字段（内置分镜角色替换，分镜序列输出替换后的文本） ====
 
 class YUAN_TXTJsonExtractor:
-    # 输出端口名
-    OUTPUT_NAMES = ("整体风格", "档案", "档案编码", "分镜序列", "角色道具场景", "角色索引", "道具索引", "场景索引", "索引时长", "场景上下文")
+    # 输出端口名（分镜序列已替换 <Picture N>/<Audio M>；音色索引位于角色与道具索引之间）
+    OUTPUT_NAMES = ("整体风格", "档案", "档案编码", "分镜序列", "角色索引", "音色索引", "道具索引", "场景索引", "索引时长", "场景上下文")
+
+    # 台词归属边界标点：说话者前必须是句首/句末标点/逗号/空白，或紧跟 </d> 之后
+    # （「甲对乙说」的乙被"对"字挡住；「甲看向乙，乙说道」的乙由逗号放行，归属竞争离冒号最近者胜）
+    BELONG_BOUNDARY = '。！？!?\n；;，,'
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -98,52 +102,23 @@ class YUAN_TXTJsonExtractor:
             "required": {
                 "json": (AnyType("*"), {
                     "forceInput": True,
-                    "tooltip": "JSON 数据输入，支持 JSON 字符串或对象。字符串可为多个 JSON 对象拼接（如分镜策划五档案与视频提示词对象合并），自动逐段解析合并提取。"
+                    "tooltip": "JSON 字符串或对象；支持多对象拼接，自动逐段解析合并提取。"
                 }),
                 "索引": ("INT", {
                     "default": 1,
                     "min": 1,
                     "step": 1,
-                    "tooltip": "对应分镜序列/分镜情节中的「编号」值，选择该编号的分镜。分镜序列端口默认输出 detailed_description(整体风格) + [Shot N]编号的时间段 + overall_soundscape(环境音) + non_diegetic_music(BGM)，标签与内容之间仅换行不空行；BGM开关关闭时 non_diegetic_music 内容输出 N/A；情节开关开启时改为输出「分镜情节」中该编号分镜的「情节」内容；分镜「类型」含武戏时时间段不加 [Shot N] 编号、原行输出；角色道具场景端口优先取「分镜情节」条目的 出现角色/出现道具/出现场景 列表定位角色、道具、场景档案（未提供时在时间段内容中智能匹配角色和道具、按标题智能匹配场景；台词保护：引号对与 <d>...</d> 标签内出现的名称不匹配、不提取），按 角色→道具→场景 顺序输出对应档案的完整描述，整体以 retention_analysis: 开头换行输出，每条描述前加 <Picture N> 序号（从1连续编号）；角色索引/道具索引端口输出匹配到的角色/道具在对应档案中的0基序号（逗号分隔），场景索引端口输出匹配到的场景档案0基序号（未匹配为空），三者均受对应输出开关控制，关时输出空文本；索引时长端口锁定该分镜「类型」字段中的时长（如 武戏：12秒、文戏：8s、MV：15秒，文戏/武戏/MV 通用，单位 s 或无单位均可）。"
+                    "tooltip": "选择「编号」分镜。分镜序列输出：定义块 + 整体风格 + [Shot N]时间段 + 环境音 + BGM（名称→<Picture N>、说话者→<Picture N><Audio M>，情节开时输出情节纯文本）；索引输出各档案 0 基序号，索引时长取「类型」时长。"
                 }),
                 "档案选择": (["角色档案", "音色档案", "道具档案", "场景档案"], {
                     "default": "角色档案",
                     "tooltip": "选择「档案」输出端口输出的档案类型：角色档案、音色档案、道具档案或场景档案。"
                 }),
-                "角色开关": ("BOOLEAN", {
-                    "default": True,
-                    "label_on": "输出",
-                    "label_off": "不输出",
-                    "display_name": "角色输出",
-                    "tooltip": "同时控制「角色道具场景」端口中的角色描述与「角色索引」端口：开=输出，关=不输出（索引输出空文本）。"
-                }),
-                "道具开关": ("BOOLEAN", {
-                    "default": True,
-                    "label_on": "输出",
-                    "label_off": "不输出",
-                    "display_name": "道具输出",
-                    "tooltip": "同时控制「角色道具场景」端口中的道具描述与「道具索引」端口：开=输出，关=不输出（索引输出空文本）。"
-                }),
-                "场景开关": ("BOOLEAN", {
-                    "default": True,
-                    "label_on": "输出",
-                    "label_off": "不输出",
-                    "display_name": "场景输出",
-                    "tooltip": "同时控制「角色道具场景」端口中的场景描述与「场景索引」端口：开=输出，关=不输出（索引输出空文本）。"
-                }),
-                "BGM开关": ("BOOLEAN", {
-                    "default": True,
-                    "label_on": "输出",
-                    "label_off": "N/A",
-                    "display_name": "BGM输出",
-                    "tooltip": "控制「分镜序列」端口中 non_diegetic_music(BGM) 内容：开=正常输出 BGM，关=输出 N/A。"
-                }),
-                "情节开关": ("BOOLEAN", {
-                    "default": False,
-                    "label_on": "输出",
-                    "label_off": "整合格式",
-                    "display_name": "情节输出",
-                    "tooltip": "控制「分镜序列」端口输出内容：开=输出「分镜情节」中该编号分镜的「情节」内容（纯文本，替代整合格式）；关=输出 detailed_description(整体风格) + [Shot N]时间段 + 环境音 + BGM 整合格式。未找到对应分镜情节时回退为整合格式。"
+            },
+            "optional": {
+                "开关配置": (AnyType("*"), {
+                    "forceInput": True,
+                    "tooltip": "接「JSON提取开关」输出，传入七项开关；未接入时按默认值执行（仅情节输出默认整合格式，其余开启）。"
                 }),
             },
         }
@@ -176,11 +151,7 @@ class YUAN_TXTJsonExtractor:
 
     @staticmethod
     def _parse_json_text(text):
-        """解析 JSON 字符串：先整体解析；失败时按多个 JSON 对象拼接处理（raw_decode 逐段解析并合并，同名键后者覆盖）。
-
-        支持多个 JSON 对象拼接输入（如分镜策划五档案与视频提示词对象合并），
-        避免整体 json.loads 抛 JSONDecodeError 导致提取全部为空。
-        """
+        """解析 JSON 字符串：先整体解析，失败时 raw_decode 逐段解析多个拼接对象并合并（同名键后者覆盖）。"""
         s = text.strip() if isinstance(text, str) else text
         if not s:
             return {}
@@ -223,10 +194,7 @@ class YUAN_TXTJsonExtractor:
 
     @staticmethod
     def _find_appearing_indices(text, char_names, prop_names):
-        """在非台词区域查找出现的角色和道具（最长匹配优先，避免子串误匹配），返回按首次出现位置排序的 (角色索引列表, 道具索引列表)。
-
-        台词保护：引号对与 <d>...</d> 标签内部出现的名称不匹配、不提取。
-        """
+        """在非台词区域（引号与 <d> 内不匹配）查找出现的角色和道具（最长匹配优先），返回按首次出现位置排序的 (角色索引列表, 道具索引列表)。"""
         if not text:
             return [], []
 
@@ -303,11 +271,7 @@ class YUAN_TXTJsonExtractor:
 
     @staticmethod
     def _build_detailed_description(整体风格, 时间段, 环境音, BGM, 类型="", bgm_enabled=True):
-        """整合分镜序列：detailed_description(整体风格) → 时间段逐行编号[Shot N] → overall_soundscape(环境音) → non_diegetic_music(BGM)；标签与内容间仅换行不空行。
-
-        类型含「武戏」时时间段不加 [Shot N] 编号，原行输出。
-        bgm_enabled=False 时 non_diegetic_music 内容输出 N/A。
-        """
+        """整合分镜序列：整体风格 → [Shot N]时间段 → 环境音 → BGM；武戏不加编号；bgm_enabled=False 时 BGM 输出 N/A。"""
         if isinstance(时间段, str):
             shot_lines = 时间段.split("\n") if 时间段.strip() else []
         elif isinstance(时间段, list):
@@ -370,11 +334,7 @@ class YUAN_TXTJsonExtractor:
 
     @staticmethod
     def _archive_indices_by_names(appearing, archive_names):
-        """按显式出现名称列表解析档案 0 基索引（去重、保持出现顺序）。
-
-        返回 None 表示 appearing 不是列表（无显式列表，由调用方走文本匹配兜底）。
-        匹配规则：精确匹配档案提取名，未命中时再取该名称第一个逗号前的部分匹配。
-        """
+        """按显式出现名称列表解析档案 0 基索引（去重、保持顺序）；非列表返回 None（调用方走文本匹配兜底）。"""
         if not isinstance(appearing, list):
             return None
         index_map = {name: i for i, name in enumerate(archive_names) if name}
@@ -394,8 +354,151 @@ class YUAN_TXTJsonExtractor:
                     result.append(idx)
         return result
 
-    def extract_json(self, json=None, 索引=1, 档案选择="角色档案", 角色开关=True, 道具开关=True, 场景开关=True, BGM开关=True, 情节开关=False):
-        # 形参名必须与输入端口名一致（ComfyUI 按关键字传参）
+    @staticmethod
+    def _build_belong_pattern(name):
+        """构建台词归属 pattern：`说话者(<Audio M>)?+引导句+冒号+<d>台词`；引导句允许逗号顿号但不跨句、不跨冒号。"""
+        boundary = YUAN_TXTJsonExtractor.BELONG_BOUNDARY
+        return re.compile(
+            r'(?:(?<=</d>)|(?<![^\s' + boundary + r']))'  # 说话者前边界：句末标点/逗号/空白 或 </d> 之后
+            r'(' + re.escape(name) + r')'        # 组1：说话者（名称或 <Picture N>）
+            r'(?:<Audio \d+>)?'                  # 可选：已有的 <Audio M>（重入时跳过，替换时重写）
+            r'([^。！？!?；;\n\r：:]*?)'          # 组2：引导句（允许逗号顿号，不得跨句/跨冒号）
+            r'[：:]\s*'                          # 冒号+可选空白
+            r'(?=<d>)'                           # 紧跟台词标签
+        )
+
+    @staticmethod
+    def _parse_picture_names(text):
+        """从定义块解析 `<Picture N>：名称，描述…` 行，返回 [(名称, "<Picture N>"), ...]；名称取第一个逗号前部分。"""
+        pairs = []
+        if not text:
+            return pairs
+        for line in text.split("\n"):
+            m = re.match(r'^\s*<Picture\s+(\d+)>\s*[：:]\s*(.+?)\s*$', line)
+            if not m:
+                continue
+            desc = m.group(2)
+            name = ""
+            for sep in ("，", ","):
+                if sep in desc:
+                    name = desc.split(sep)[0].strip()
+                    break
+            if not name:
+                name = desc.strip()
+            if name:
+                pairs.append((name, f"<Picture {m.group(1)}>"))
+        return pairs
+
+    @staticmethod
+    def _parse_voice_indices(text):
+        """解析角色索引串（如「0,4,1」）为整数列表；容错中文逗号/空格/非法项，返回 []。"""
+        if not text:
+            return []
+        values = []
+        for part in re.split(r'[,，]', str(text)):
+            part = part.strip()
+            if part and re.fullmatch(r'-?\d+', part):
+                values.append(int(part))
+        return values
+
+    @staticmethod
+    def _scan_speaking_order(text, pairs, protect_enabled):
+        """扫描分镜序列，按说话角色首次说话的出现顺序分配 <Audio M>（最多3个）。
+
+        识别 `名称+引导句+冒号+<d>` 与 `<Picture N>+引导句+冒号+<d>` 两种说话形式；
+        同一台词多候选说话者时取离冒号最近者（起点相同取名称更长者）；
+        标准规则未命中时从冒号往前追溯最近的未保护候选（引号内/<d>内跳过）；
+        台词保护开启时被保护位置不算说话；同一角色只按首次出现分配一个编号。
+
+        返回 (audio_by_tag, speaking_tags, winners)：
+        - audio_by_tag：{<Picture N>: "<Audio M>"}，超过3个不分配
+        - speaking_tags：按 <Audio 1/2/3> 分配顺序的标记列表，用于音色索引
+        - winners：[(台词位置, 替换起点, 替换终点, 标记)]，替换区间覆盖说话者及已有 <Audio M>（重入重写）
+        """
+        mask = _build_dialogue_protect_mask(text) if protect_enabled else None
+        # 待匹配的「说话者」形式：名称 + <Picture N> 标记（去重）
+        forms = []
+        for name, tag in pairs:
+            forms.append((name, tag))
+        for _name, tag in pairs:
+            if (tag, tag) not in forms:
+                forms.append((tag, tag))
+
+        # 收集所有候选命中：(台词目标位置, 说话者起点, 说话者终点, 替换终点, 标记)
+        hits = []
+        for form, tag in forms:
+            for m in YUAN_TXTJsonExtractor._build_belong_pattern(form).finditer(text):
+                if mask is not None:
+                    if any(mask[k] for k in range(m.start(1), m.end(1))):
+                        continue
+                hits.append((m.end(), m.start(1), m.end(1), m.start(2), tag))
+        # 同一台词目标的候选者竞争：离冒号最近（起点最大）者胜，起点相同取名称更长者
+        by_target = {}
+        for end, s1, e1, s2, tag in hits:
+            cur = by_target.get(end)
+            if cur is None or (s1, e1) > (cur[1], cur[2]):
+                by_target[end] = (end, s1, e1, s2, tag)
+
+        # 兜底追溯：标准规则未命中的台词目标，从冒号往前追溯最近的未保护候选
+        # 候选 pattern 含可选的已有 <Audio M>（重入时替换区间覆盖、重写编号）
+        backtrack_pats = [
+            (re.compile(re.escape(form) + r'(?:<Audio \d+>)?'), tag)
+            for form, tag in forms
+        ]
+        for m in re.finditer(r'[：:]\s*(?=<d>)', text):
+            target = m.end()
+            if target in by_target:
+                continue
+            best = None  # (起点, 终点, 标记)
+            for pat, tag in backtrack_pats:
+                for bm in pat.finditer(text, 0, target):
+                    s, e = bm.start(), bm.end()
+                    if mask is not None and any(mask[k] for k in range(s, e)):
+                        continue  # 引号内/<d>内的候选跳过，继续往前追溯
+                    if best is None or (s, e) > (best[0], best[1]):
+                        best = (s, e, tag)
+            if best is not None:
+                by_target[target] = (target, best[0], best[1], best[1], best[2])
+
+        winners = sorted(by_target.values(), key=lambda x: x[0])
+
+        audio_by_tag = {}
+        speaking_tags = []
+        next_num = 1
+        for _end, _s1, _e1, _s2, tag in winners:
+            if tag not in audio_by_tag:
+                if next_num <= 3:
+                    audio_by_tag[tag] = f"<Audio {next_num}>"
+                    speaking_tags.append(tag)
+                    next_num += 1
+        return audio_by_tag, speaking_tags, winners
+
+    # 七个选项开关的聚合键序（「JSON提取开关」子节点的输出与其一致）
+    SWITCH_KEYS = ("角色开关", "音色开关", "道具开关", "场景开关", "BGM开关", "情节开关", "台词开关")
+    # 未接入子节点时的默认值（除情节输出默认整合格式外，其余默认开启）
+    SWITCH_DEFAULTS = (True, True, True, True, True, False, True)
+
+    @classmethod
+    def _parse_switch_config(cls, 开关配置):
+        """解析「开关配置」为七个布尔值元组：None→默认值；dict→按键名取值（缺失键取默认）；
+        7元列表/元组→按 SWITCH_KEYS 顺序取值；其他类型容错回退默认值。"""
+        if 开关配置 is None:
+            return cls.SWITCH_DEFAULTS
+        values = dict(zip(cls.SWITCH_KEYS, cls.SWITCH_DEFAULTS))
+        if isinstance(开关配置, dict):
+            for k in cls.SWITCH_KEYS:
+                v = 开关配置.get(k)
+                if isinstance(v, bool):
+                    values[k] = v
+        elif isinstance(开关配置, (list, tuple)) and len(开关配置) == len(cls.SWITCH_KEYS):
+            for k, v in zip(cls.SWITCH_KEYS, 开关配置):
+                if isinstance(v, bool):
+                    values[k] = v
+        return tuple(values[k] for k in cls.SWITCH_KEYS)
+
+    def extract_json(self, json=None, 索引=1, 档案选择="角色档案", 开关配置=None):
+        # 形参名与输入端口名一致；七个选项开关来自「开关配置」（未接入时取默认值）
+        角色开关, 音色开关, 道具开关, 场景开关, BGM开关, 情节开关, 台词开关 = self._parse_switch_config(开关配置)
         data = json
 
         # 字符串自动解析为 dict（支持多个 JSON 对象拼接合并）
@@ -468,7 +571,7 @@ class YUAN_TXTJsonExtractor:
         else:
             分镜序列整合 = self._build_detailed_description(整体风格, 时间段, 环境音, BGM, matched_type, BGM开关)
 
-        # 角色道具场景：未找到分镜输出空；否则按 角色→道具→场景 顺序输出档案完整描述
+        # 角色道具场景定义（内部变量）：按 角色→道具→场景 顺序生成档案完整描述，供前置与名称替换
         # 角色/道具/场景索引：匹配到的档案 0 基序号（角色/道具逗号分隔，场景单个），未匹配为空
         if not found_shot:
             角色道具场景 = ""
@@ -522,9 +625,7 @@ class YUAN_TXTJsonExtractor:
             道具索引 = ",".join(str(i) for i in prop_indices) if 道具开关 else ""
             场景索引 = (str(idx) if idx >= 0 else "") if 场景开关 else ""
 
-            # 按开关过滤后输出：先角色再道具最后场景
-            # 情节开关开启时输出纯描述文本（无 retention_analysis: 前缀、无 <Picture N>：序号）；
-            # 情节开关关闭时整体以 retention_analysis: 开头、每条加 <Picture N> 序号
+            # 按开关过滤：先角色再道具最后场景；情节模式为纯描述文本，否则加 retention_analysis: 前缀与 <Picture N> 序号
             输出块 = []
             if 角色开关:
                 输出块.extend(角色描述列表)
@@ -562,9 +663,138 @@ class YUAN_TXTJsonExtractor:
                 if curr_prefix and prev_prefix and curr_prefix == prev_prefix:
                     场景判断 = True
 
+        # ==== 内置分镜角色替换：定义块中的名称在分镜序列中替换为 <Picture N> 标记 ====
+        # 情节模式下无序号行，pairs 为空、不替换
+        pairs = self._parse_picture_names(角色道具场景)
+        # 按名称长度降序排序（最长匹配优先，避免短名误替换长名中的子串）
+        pairs.sort(key=lambda x: -len(x[0]))
+
+        分镜序列输出 = 分镜序列整合 or ""
+        音色索引 = ""
+
+        # 说话者替换为 <Picture N><Audio M>（最多3个，按首次说话顺序编号）；音色开关关闭时走普通替换
+        if 音色开关:
+            audio_by_tag, speaking_tags, winners = self._scan_speaking_order(分镜序列输出, pairs, 台词开关)
+            # 从右往左位置化替换（避免偏移）；重叠区间跳过（同角色同标记，二次替换反而错位）
+            replaced_ranges = []
+            for _end, s1, _e1, s2, tag in sorted(winners, key=lambda x: -x[0]):
+                audio = audio_by_tag.get(tag)
+                if audio:
+                    if any(s1 < re_ and s2 > rs for rs, re_ in replaced_ranges):
+                        continue
+                    分镜序列输出 = 分镜序列输出[:s1] + tag + audio + 分镜序列输出[s2:]
+                    replaced_ranges.append((s1, s2))
+
+            # 音色索引：按说话顺序取 <Picture N> 对应的角色索引值（第 N 个数字对应 <Picture N>）
+            if speaking_tags:
+                indices = self._parse_voice_indices(角色索引)
+                if indices:
+                    values = []
+                    for tag in speaking_tags:
+                        m = re.match(r'^<Picture (\d+)>$', tag)
+                        if m:
+                            n = int(m.group(1))
+                            if 1 <= n <= len(indices):
+                                values.append(str(indices[n - 1]))
+                    音色索引 = ",".join(values)
+
+        # 普通替换：名称 → <Picture N>
+        for name, tag in pairs:
+            if 台词开关:
+                分镜序列输出 = YUAN_TXTReplace._replace_with_protect(
+                    分镜序列输出, name, tag, _build_dialogue_protect_mask(分镜序列输出))
+            else:
+                分镜序列输出 = 分镜序列输出.replace(name, tag)
+
+        # retention_analysis 定义块前置到 detailed_description 之前（替换后拼接，定义中名称保留原文）；
+        # 情节模式下前置档案描述纯文本；rstrip 与 \n\n 分隔符合成恰好一个空行
+        if 角色道具场景:
+            分镜序列输出 = 角色道具场景.rstrip("\n") + "\n\n" + 分镜序列输出
+
         return {
-            "result": [整体风格, 档案, 档案编码, 分镜序列整合, 角色道具场景, 角色索引, 道具索引, 场景索引, 索引时长, 场景判断]
+            "result": [整体风格, 档案, 档案编码, 分镜序列输出, 角色索引, 音色索引, 道具索引, 场景索引, 索引时长, 场景判断]
         }
+
+
+# ==== JSON提取开关（JSON提取 的子节点）：七个选项开关聚合为单个「开关配置」端口输出 ====
+
+class YUAN_TXTJsonSwitch:
+    # 输出接「JSON提取」的「开关配置」可选端口；未接入时 JSON提取 按默认值执行
+    OUTPUT_NAMES = ("开关配置",)
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "角色开关": ("BOOLEAN", {
+                    "default": True,
+                    "label_on": "输出",
+                    "label_off": "不输出",
+                    "display_name": "角色输出",
+                    "tooltip": "开=角色名称替换为 <Picture N> 并输出「角色索引」；关=不替换、索引为空。"
+                }),
+                "音色开关": ("BOOLEAN", {
+                    "default": True,
+                    "label_on": "输出",
+                    "label_off": "不输出",
+                    "display_name": "音色输出",
+                    "tooltip": "开=说话者替换为 <Picture N><Audio M>（最多3个，按说话顺序编号）并输出「音色索引」；关=仅普通替换 <Picture N>、音色索引为空。",
+                }),
+                "道具开关": ("BOOLEAN", {
+                    "default": True,
+                    "label_on": "输出",
+                    "label_off": "不输出",
+                    "display_name": "道具输出",
+                    "tooltip": "开=道具名称替换为 <Picture N> 并输出「道具索引」；关=不替换、索引为空。"
+                }),
+                "场景开关": ("BOOLEAN", {
+                    "default": True,
+                    "label_on": "输出",
+                    "label_off": "不输出",
+                    "display_name": "场景输出",
+                    "tooltip": "开=场景名称替换为 <Picture N> 并输出「场景索引」；关=不替换、索引为空。"
+                }),
+                "BGM开关": ("BOOLEAN", {
+                    "default": True,
+                    "label_on": "输出",
+                    "label_off": "N/A",
+                    "display_name": "BGM输出",
+                    "tooltip": "开=分镜序列正常输出 BGM；关=输出 N/A。"
+                }),
+                "情节开关": ("BOOLEAN", {
+                    "default": False,
+                    "label_on": "输出",
+                    "label_off": "整合格式",
+                    "display_name": "情节输出",
+                    "tooltip": "开=输出情节纯文本；关=输出整合格式（含名称替换与前置定义块）。情节缺失时回退整合格式。"
+                }),
+                "台词开关": ("BOOLEAN", {
+                    "default": True,
+                    "label_on": "保护台词",
+                    "label_off": "正常替换",
+                    "display_name": "台词保护",
+                    "tooltip": "开=引号对与 <d>...</d> 内的名称不替换、原文保留；关=整段正常替换。",
+                }),
+            },
+        }
+
+    RETURN_TYPES = (AnyType("*"),)
+    RETURN_NAMES = OUTPUT_NAMES
+    FUNCTION = "get_switches"
+    CATEGORY = "Yuan Tool/文本"
+
+    def get_switches(self, 角色开关, 音色开关, 道具开关, 场景开关, BGM开关, 情节开关, 台词开关):
+        # 聚合为开关配置 dict，须包在元组中返回（裸 dict 会被 ComfyUI 当作 ui/result/expand 特殊返回，
+        # 导致零输出、下游 IndexError）；键序与 YUAN_TXTJsonExtractor.SWITCH_KEYS 一致
+        return ({
+            "角色开关": 角色开关,
+            "音色开关": 音色开关,
+            "道具开关": 道具开关,
+            "场景开关": 场景开关,
+            "BGM开关": BGM开关,
+            "情节开关": 情节开关,
+            "台词开关": 台词开关,
+        },)
 
 
 # ==== 出场排序 ====
@@ -696,7 +926,7 @@ class YUAN_TXTListNumber:
                 }),
                 "输出模式": (["列表", "合并文本"], {
                     "default": "列表",
-                    "tooltip": "● 列表：输出为包含所有编号文本的字符串列表。\n● 合并文本：将所有带编号的文本合并成一个字符串。"
+                    "tooltip": "列表=逐条输出编号文本列表；合并文本=合并为单个字符串。"
                 }),
                 "合并间隔符": ("STRING", {
                     "default": "\\n",
@@ -751,23 +981,19 @@ class YUAN_TXTReplace:
                 "查找文本": ("STRING", {
                     "multiline": True,
                     "placeholder": "每行一个要查找的文本...",
-                    "tooltip": "要查找的文本列表，每行对应一组。\n第1行对应替换文本第1行，第2行对应替换文本第2行，以此类推。"
+                    "tooltip": "查找文本，每行一条，与「替换文本」按行逐行对应。"
                 }),
                 "替换文本": ("STRING", {
                     "multiline": True,
                     "placeholder": "每行一个要替换的文本...",
-                    "tooltip": "要替换的文本列表，每行对应一组。\n第1行对应查找文本第1行，第2行对应查找文本第2行，以此类推。"
+                    "tooltip": "替换文本，每行一条，与「查找文本」按行逐行对应。"
                 }),
                 "台词开关": ("BOOLEAN", {
                     "default": False,
                     "label_on": "保护台词",
                     "label_off": "正常替换",
                     "display_name": "台词保护",
-                    "tooltip": "【台词保护】\n开启后，被以下引号包裹的「人物说话内容」不进行替换，原文保留：\n"
-                               "● 半角双引号 / 单引号：\"...\"  '...'\n"
-                               "● 中文弯引号：“...”  ‘...’\n"
-                               "● 中文直角引号：「...」 『...』\n"
-                               "关闭时，整段文本正常执行批量替换。",
+                    "tooltip": "开=引号（\"…\"、'…'、“…”、'…'、「…」）内的内容不替换；关=整段正常批量替换。",
                 }),
             },
         }
@@ -838,273 +1064,6 @@ class YUAN_TXTReplace:
         return (result,)
 
 
-# ==== 分镜角色替换 ====
-
-class YUAN_TXTShotReplace:
-
-    # 台词归属边界标点：说话者前必须是句首/句末标点/逗号/空白边界，或紧跟 </d> 之后
-    # （「甲对乙说」中的乙由其前的"对"字非边界挡住；「甲看向乙，乙说道」中的乙由逗号边界放行、
-    #   归属竞争时离冒号最近者胜；</d>台词结束后紧跟的下一个说话者由 </d> 边界放行，
-    #   而「盯住<Picture 2>急道」中的 <Picture 2> 前是标签结束符">"而非 </d>，不会被放行误归属）
-    BELONG_BOUNDARY = '。！？!?\n；;，,'
-
-    @staticmethod
-    def _build_belong_pattern(name):
-        """构建台词归属匹配 pattern：`说话者(<Audio M>)?+引导句+冒号+<d>台词`。
-
-        说话者可为名称或 <Picture N> 标记；可选的已有 <Audio M>（输出重入时）会被跳过并重写新编号。
-        引导句允许逗号/顿号等多动作描述（如「在蒲团前刹住脚步，胸口起伏，仰头急道」），
-        但不得跨句（。！？!?；;换行）、跨冒号（天然不会吞并其他台词）。
-        """
-        boundary = YUAN_TXTShotReplace.BELONG_BOUNDARY
-        return re.compile(
-            r'(?:(?<=</d>)|(?<![^\s' + boundary + r']))'  # 说话者前边界：句末标点/逗号/空白 或 </d> 之后
-            r'(' + re.escape(name) + r')'        # 组1：说话者（名称或 <Picture N>）
-            r'(?:<Audio \d+>)?'                  # 可选：已有的 <Audio M>（重入时跳过，替换时重写）
-            r'([^。！？!?；;\n\r：:]*?)'          # 组2：引导句（允许逗号顿号，不得跨句/跨冒号）
-            r'[：:]\s*'                          # 冒号+可选空白
-            r'(?=<d>)'                           # 紧跟台词标签
-        )
-
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "角色道具场景": ("STRING", {
-                    "forceInput": True,
-                    "multiline": True,
-                    "tooltip": "接入 JSON提取节点的「角色道具场景」输出。每行 <Picture N>：名称，描述… 取第一个逗号前的名称作为查找对象，在分镜序列中替换为对应的 <Picture N> 标记。"
-                }),
-                "分镜序列": ("STRING", {
-                    "forceInput": True,
-                    "multiline": True,
-                    "tooltip": "接入 JSON提取节点的「分镜序列」输出。文本中出现的角色/道具/场景名称将被替换为对应的 <Picture N> 标记（最长匹配优先），其余内容原样保留。\n"
-                               "【台词归属特殊规则】说话者（名称或 <Picture N> 标记）后跟引导句+冒号+<d>台词时（如「沈惊鸿低声说：<d>…</d>」「<Picture 1>刹住脚步，胸口起伏，仰头急道：<d>…</d>」，引导句可含逗号等多动作描述），说话者替换为 <Picture N> 后追加 <Audio M> 音频标记；同一台词有多个候选说话者时（如「甲看向乙，乙说道：」）取离冒号最近者为说话者。\n"
-                               "【兜底追溯】标准规则未命中时（说话者被「将/把」等字挡住，如「炽红火光将<Picture 4>…发抖：<d>…</d>」；或承前省略主语「他怒道：」），从冒号往前追溯最近的未保护 <Picture N> 标记或名称作为说话者（引号内/<d>内候选跳过）。\n"
-                               "<Audio M> 按说话角色在分镜序列中首次说话的出现顺序编号：第一个说话的角色 <Audio 1>，第二个 <Audio 2>，第三个 <Audio 3>，最多三个。"
-                }),
-                "台词开关": ("BOOLEAN", {
-                    "default": True,
-                    "label_on": "保护台词",
-                    "label_off": "正常替换",
-                    "display_name": "台词保护",
-                    "tooltip": "【台词保护】\n开启后，被以下格式包裹的「人物说话内容」中的名称不替换、原文保留：\n"
-                               "● 半角双引号 / 单引号：\"...\"  '...'\n"
-                               "● 中文弯引号：“...”  ‘...’\n"
-                               "● 中文直角引号：「...」 『...』\n"
-                               "● 台词标签：<d>...</d>\n"
-                               "关闭时，整段文本正常执行名称替换。",
-                }),
-                "参考音频开关": ("BOOLEAN", {
-                    "default": True,
-                    "label_on": "输出<Audio M>",
-                    "label_off": "输出<Picture N>",
-                    "display_name": "参考音频",
-                    "tooltip": "【参考音频】\n"
-                               "开启后，台词归属特殊规则生效：`说话者+引导句+：<d>台词` 中说话者替换为 `<Picture N><Audio M>`\n"
-                               "（如「沈惊鸿低声说：<d>…</d>」→「<Picture 1><Audio 1>低声说：<d>…</d>」），用于关联参考音频。\n"
-                               "引导句允许逗号等多动作描述（如「刹住脚步，胸口起伏，仰头急道：」）；同一台词有多个候选说话者时（如「甲看向乙，乙说道：」）取离冒号最近者为说话者。\n"
-                               "标准规则未命中时兜底追溯：从冒号往前追溯最近的未保护 <Picture N> 标记或名称作为说话者（说话者被「将/把」等字挡住或承前省略主语时生效，引号内/<d>内候选跳过）。\n"
-                               "<Audio M> 按说话角色首次说话的出现顺序编号：第一个说话的角色 <Audio 1>，第二个 <Audio 2>，第三个 <Audio 3>，最多三个。\n"
-                               "超过三个时不报错，第4个及以后的说话角色仍正常替换为 <Picture N>，只是不追加 <Audio M> 标记。\n"
-                               "关闭后，不追加 <Audio M>，名称走普通替换输出 <Picture N>"
-                               "（如「<Picture 1>低声说：<d>…</d>」），音色索引输出为空。",
-                }),
-                "角色索引": ("STRING", {
-                    "forceInput": True,
-                    "multiline": True,
-                    "tooltip": "接入 JSON提取节点的「角色索引」输出。逗号分隔的数字串，第 N 个数字对应 <Picture N> 的音色索引，\n"
-                               "如「0,4,1」：0 对应 <Picture 1>、4 对应 <Picture 2>、1 对应 <Picture 3>。\n"
-                               "【音色索引输出】按说话顺序重新排列：只输出实际说话的角色对应的索引，未说话的角色不输出。\n"
-                               "如 <Picture 3> 第一个说话、<Picture 2> 第二个说话、<Picture 1> 未说话，则音色索引输出「1,4」。\n"
-                               "未连线或为空时，音色索引输出为空（不影响 <Audio M> 标记的追加）。",
-                }),
-            },
-        }
-
-    RETURN_TYPES = ("STRING", "STRING",)
-    RETURN_NAMES = ("分镜序列", "音色索引",)
-    FUNCTION = "replace_shot_names"
-    CATEGORY = "Yuan Tool/文本"
-    OUTPUT_NODE = True
-
-    @staticmethod
-    def _parse_picture_names(text):
-        """从「角色道具场景」解析 <Picture N>：名称，描述… 定义，返回 [(名称, "<Picture N>"), ...]。
-
-        名称取第一个逗号（全角/半角）前的部分；无逗号时取整行描述。
-        """
-        pairs = []
-        if not text:
-            return pairs
-        for line in text.split("\n"):
-            m = re.match(r'^\s*<Picture\s+(\d+)>\s*[：:]\s*(.+?)\s*$', line)
-            if not m:
-                continue
-            desc = m.group(2)
-            name = ""
-            for sep in ("，", ","):
-                if sep in desc:
-                    name = desc.split(sep)[0].strip()
-                    break
-            if not name:
-                name = desc.strip()
-            if name:
-                pairs.append((name, f"<Picture {m.group(1)}>"))
-        return pairs
-
-    @staticmethod
-    def _build_protect_mask(text):
-        """台词保护掩码：引号对内部 + <d>...</d> 标签内部（含标签自身），调用模块级共享实现。"""
-        return _build_dialogue_protect_mask(text)
-
-    @staticmethod
-    def _parse_voice_indices(text):
-        """解析角色索引串（如「0,4,1」）为整数列表；容错中文逗号/空格/非法项，返回 []。"""
-        if not text:
-            return []
-        values = []
-        for part in re.split(r'[,，]', str(text)):
-            part = part.strip()
-            if part and re.fullmatch(r'-?\d+', part):
-                values.append(int(part))
-        return values
-
-    @staticmethod
-    def _scan_speaking_order(text, pairs, protect_enabled):
-        """扫描分镜序列，按说话角色首次说话的出现顺序分配 <Audio M> 编号（最多3个）。
-
-        说话的两种形式都识别（只有说话的才有 <Audio M>）：
-        - 名称形式：`名称+引导句+冒号+<d>台词`（如「沈惊鸿低声道：<d>…</d>」）
-        - 标记形式：`<Picture N>+引导句+冒号+<d>台词`（如「<Picture 1>低声道：<d>…</d>」）
-
-        归属竞争：同一台词（冒号+<d>）有多个候选说话者时（如「甲看向乙，乙说道：」中，
-        甲的引导句「看向乙，乙说道」与乙的引导句「说道」同时命中），取离冒号最近者；
-        起点相同时取名称更长者（防「林」抢先于「林小雨」）。
-
-        兜底追溯：标准规则未命中的台词（说话者被「将/把/被」等非边界字挡住，
-        如「炽红火光将<Picture 4>半边脸映得凶厉，…发抖：<d>」；或承前省略主语「他怒道：」），
-        从冒号往前追溯最近的未被保护的 <Picture N> 标记或名称作为说话者
-        （不限句界；处于引号内/<d>内的候选跳过继续往前；无候选则该台词无归属）。
-
-        返回 (audio_by_tag, speaking_tags, winners)：
-        - audio_by_tag：{<Picture N> 标记: "<Audio M>"}；超过3个不同说话角色的部分不分配
-        - speaking_tags：[<Picture N> 标记...] 按 <Audio 1/2/3> 分配顺序（最多3个），用于音色索引输出
-        - winners：[(台词目标位置, 替换起点, 替换终点, <Picture N> 标记)] 按台词出现顺序，
-          替换区间 [起点, 终点) 覆盖说话者及已有 <Audio M>（重入时重写），用于位置化替换
-
-        - 同一角色（同一 <Picture N>）无论以名称还是标记形式说话，只按首次出现分配一个编号
-        - 台词保护开启时，处于被保护位置（引号内/<d>内）的不算说话
-        """
-        mask = YUAN_TXTShotReplace._build_protect_mask(text) if protect_enabled else None
-        # 待匹配的「说话者」形式：名称 + <Picture N> 标记（去重）
-        forms = []
-        for name, tag in pairs:
-            forms.append((name, tag))
-        for _name, tag in pairs:
-            if (tag, tag) not in forms:
-                forms.append((tag, tag))
-
-        # 收集所有候选命中：(台词目标位置, 说话者起点, 说话者终点, 替换终点, 标记)
-        hits = []
-        for form, tag in forms:
-            for m in YUAN_TXTShotReplace._build_belong_pattern(form).finditer(text):
-                if mask is not None:
-                    if any(mask[k] for k in range(m.start(1), m.end(1))):
-                        continue
-                hits.append((m.end(), m.start(1), m.end(1), m.start(2), tag))
-        # 同一台词目标的候选者竞争：离冒号最近（起点最大）者胜，起点相同取名称更长者
-        by_target = {}
-        for end, s1, e1, s2, tag in hits:
-            cur = by_target.get(end)
-            if cur is None or (s1, e1) > (cur[1], cur[2]):
-                by_target[end] = (end, s1, e1, s2, tag)
-
-        # 兜底追溯：标准规则未命中的台词目标，从冒号往前追溯最近的未保护候选
-        # 候选 pattern 含可选的已有 <Audio M>（重入时替换区间覆盖、重写编号）
-        backtrack_pats = [
-            (re.compile(re.escape(form) + r'(?:<Audio \d+>)?'), tag)
-            for form, tag in forms
-        ]
-        for m in re.finditer(r'[：:]\s*(?=<d>)', text):
-            target = m.end()
-            if target in by_target:
-                continue
-            best = None  # (起点, 终点, 标记)
-            for pat, tag in backtrack_pats:
-                for bm in pat.finditer(text, 0, target):
-                    s, e = bm.start(), bm.end()
-                    if mask is not None and any(mask[k] for k in range(s, e)):
-                        continue  # 引号内/<d>内的候选跳过，继续往前追溯
-                    if best is None or (s, e) > (best[0], best[1]):
-                        best = (s, e, tag)
-            if best is not None:
-                by_target[target] = (target, best[0], best[1], best[1], best[2])
-
-        winners = sorted(by_target.values(), key=lambda x: x[0])
-
-        audio_by_tag = {}
-        speaking_tags = []
-        next_num = 1
-        for _end, _s1, _e1, _s2, tag in winners:
-            if tag not in audio_by_tag:
-                if next_num <= 3:
-                    audio_by_tag[tag] = f"<Audio {next_num}>"
-                    speaking_tags.append(tag)
-                    next_num += 1
-        return audio_by_tag, speaking_tags, winners
-
-    def replace_shot_names(self, 角色道具场景, 分镜序列, 台词开关, 参考音频开关, 角色索引):
-        pairs = self._parse_picture_names(角色道具场景 or "")
-
-        # 按名称长度降序排序（最长匹配优先，避免短名误替换长名中的子串）
-        pairs.sort(key=lambda x: -len(x[0]))
-
-        result = 分镜序列 or ""
-        音色索引 = ""
-
-        # 特殊规则：只有说话的角色才有 <Audio M>（最多3个，按首次说话顺序编号）
-        # 两种说话形式都处理：名称+引导句+：<d> 与 <Picture N>+引导句+：<d>
-        # 参考音频开关关闭时跳过，走普通 <Picture N> 替换
-        if 参考音频开关:
-            audio_by_tag, speaking_tags, winners = self._scan_speaking_order(result, pairs, 台词开关)
-            # 位置化替换（从右往左，避免位置偏移）：说话者及已有 <Audio M> → <Picture N><Audio M>
-            # 追溯命中的区间可能与标准命中的区间重叠（同一说话者先标准命中、后句承前省略又追溯到它），
-            # 同角色同标记，重叠区间跳过即可（内容一致，二次替换反而错位）
-            replaced_ranges = []
-            for _end, s1, _e1, s2, tag in sorted(winners, key=lambda x: -x[0]):
-                audio = audio_by_tag.get(tag)
-                if audio:
-                    if any(s1 < re_ and s2 > rs for rs, re_ in replaced_ranges):
-                        continue
-                    result = result[:s1] + tag + audio + result[s2:]
-                    replaced_ranges.append((s1, s2))
-
-            # 音色索引：按说话顺序（<Audio 1/2/3> 分配顺序）取各角色 <Picture N> 对应的角色索引值
-            # （第 N 个数字对应 <Picture N>）；未说话的角色不输出，索引越界的跳过
-            if speaking_tags:
-                indices = self._parse_voice_indices(角色索引)
-                if indices:
-                    values = []
-                    for tag in speaking_tags:
-                        m = re.match(r'^<Picture (\d+)>$', tag)
-                        if m:
-                            n = int(m.group(1))
-                            if 1 <= n <= len(indices):
-                                values.append(str(indices[n - 1]))
-                    音色索引 = ",".join(values)
-
-        # 普通替换：名称 → <Picture N>
-        for name, tag in pairs:
-            if 台词开关:
-                result = YUAN_TXTReplace._replace_with_protect(
-                    result, name, tag, YUAN_TXTShotReplace._build_protect_mask(result))
-            else:
-                result = result.replace(name, tag)
-
-        return (result, 音色索引)
-
-
 # ==== 文本处理（分段） ====
 
 class YUAN_TXTParagraphSplitter:
@@ -1115,41 +1074,41 @@ class YUAN_TXTParagraphSplitter:
                 "text": ("STRING", {
                     "multiline": True,
                     "placeholder": "输入需要分割的文本...",
-                    "tooltip": "基础文本输入框。\n如果您使用[输入端口]功能连接了其他节点，此处的文本将作为第1部分，其他端口(any_xx)的内容会按顺序拼接在其后。"
+                    "tooltip": "待分割文本。接入 any_x 端口时，此文本为第1部分，其余端口内容按顺序拼接其后。"
                 }),
                 "输出模式": ("BOOLEAN", {
                     "default": False,
                     "label_on": "输出分段列表",
                     "label_off": "输出原始文本",
-                    "tooltip": "控制端口输出的内容：\n● 输出原始文本（执行分段方式、段落优化、选取段落等所有处理规则，最终合并为一段文本输出）。\n● 输出分段列表（输出分割处理后的内容，按分段方式进行分割，以列表形式输出）。"
+                    "tooltip": "输出原始文本=按全部分段规则合并为一段；输出分段列表=按分段方式分割后以列表输出。"
                 }),
                 "段落优化": ("BOOLEAN", {
                     "default": True,
                     "label_on": "去除首尾空格",
                     "label_off": "保留原始空格",
-                    "tooltip": "优化文本空格\n● 去除首尾空格（自动删除首尾空格、换行符。无论输出原文还是分段均有效）。\n● 保留原始空格（完全保留原始文本的格式和缩进）。"
+                    "tooltip": "去除首尾空格=清理首尾空白与换行；保留原始空格=完全保留原始格式与缩进。"
                 }),
                 "分段方式": (["端口", "空行", "序号", "段落", "标题", "数字", "地址", "手动"], {
                     "default": "空行",
-                    "tooltip": "【核心分割逻辑】\n● 端口：严格按输入端口(any_x)分割。\n● 空行：识别双换行符。\n● 序号：识别 1. / (1) / A. 等列表标记。\n● 段落：每一行算一段。\n● 标题：智能识别章节标题。\n● 数字：仅提取纯数字。\n● 地址：智能从乱码、列表、对象字符串中提取 Windows 文件路径 (如 D:\\Data\\img.png)，并自动清洗格式。\n● 手动：识别 ||| 分隔符进行自定义分割。"
+                    "tooltip": "分割方式：端口/空行(双换行)/序号/段落(每行一段)/标题/数字/地址(Windows路径)/手动(|||)。"
                 }),
                 "输出段落": ("INT", {
                     "default": 0,
                     "min": 0,
                     "step": 1,
                     "display": "number",
-                    "tooltip": "【动态扩展输出】\n设置节点右侧[段落x]输出端口的数量。\n例如设为 3，右侧会出现 段落1, 段落2, 段落3。\n(需点击节点上的「更新端口」按钮生效)"
+                    "tooltip": "右侧「段落x」输出端口数量，改后需点击「更新端口」生效。"
                 }),
                 "输入端口": ("INT", {
                     "default": 1,
                     "min": 1,
                     "step": 1,
                     "display": "number",
-                    "tooltip": "【动态扩展输入】\n设置节点左侧[any_x]输入端口的数量。\n用于将多个文本源（如多个加载文本节点）按顺序拼合在一起进行统一分段处理。\n(注意：修改数值后需点击节点上的「更新端口」按钮生效)"}),
+                    "tooltip": "左侧「any_x」输入端口数量（多文本源按顺序拼合分段），改后需点击「更新端口」生效。"}),
                 "选取段落": ("STRING", {
                     "default": "-1",
                     "placeholder": "输入要选取的段落，用逗号分隔，如0,2,4；填 -1 输出所有；留空总段输出为空",
-                    "tooltip": "【分割后段落选取】\n决定选取哪些段落输出。\n● -1（默认）：输出所有段落。\n● 留空：不选取任何段落，总段输出为空。\n● 0 为第一段、1 为第二段，以此类推。\n● 输入 0,2,4：输出第1、3、5段，丢弃其他。\n此设置会改变[总段]和[段落x]端口的内容。"
+                    "tooltip": "选取输出哪些段落：逗号分隔的 0 基索引（如 0,2,4），填 -1 输出全部，留空不选（总段为空）。影响「总段」与「段落x」。",
                 }),
             },
             "optional": {
@@ -1414,12 +1373,7 @@ class YUAN_TXTLength:
                 "长度模式": (["字符串", "段落", "空行", "列表"], {
                     "default": "字符串",
                     "tooltip":
-                        "选择长度计数方式：\n"
-                        "● 字符串：直接输出文本的字符总数（空文本为 0）。\n"
-                        "● 段落：每一行算一个段落，统计行数（空行也单独算一行）。\n"
-                        "● 空行：按空行（连续换行，段间空白行）分割文本，统计分割后的段落块数量。\n"
-                        "● 列表：若上游输出为列表（如文本处理节点的「输出分段列表」），统计列表元素个数；不是列表则按整个文本整体视为 1。\n"
-                        "任何模式下，空文本（无内容）均输出 0。",
+                        "长度计数方式：字符串=字符总数；段落=行数；空行=按空行分块数；列表=列表元素数（非列表视为1）。空文本均输出 0。",
                 }),
             },
         }
@@ -1512,7 +1466,7 @@ class YUAN_TXTShotDurations:
             "required": {
                 "json": (AnyType("*"), {
                     "forceInput": True,
-                    "tooltip": "JSON 数据输入（分镜策划五档案），支持 JSON 字符串或对象；字符串可为多个 JSON 对象拼接，自动逐段解析合并。"
+                    "tooltip": "分镜策划 JSON（字符串或对象，支持多对象拼接）。"
                 }),
             },
         }
@@ -1568,9 +1522,6 @@ class YUAN_TXTShotDurations:
 # ==== 预览内容（复刻自 Yuan-TV 的 ShowText|yuanTV） ====
 
 class YUAN_TXTPreviewContent:
-    """预览/编辑任意内容。
-    
-    """
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -1617,11 +1568,11 @@ class YUAN_TXTPreviewContent:
 
 NODE_CLASS_MAPPINGS = {
     "YUAN_TXTJsonExtractor": YUAN_TXTJsonExtractor,
+    "YUAN_TXTJsonSwitch": YUAN_TXTJsonSwitch,
     "YUAN_TXTAppearanceOrder": YUAN_TXTAppearanceOrder,
     "YUAN_TXTConvertAny": YUAN_TXTConvertAny,
     "YUAN_TXTListNumber": YUAN_TXTListNumber,
     "YUAN_TXTReplace": YUAN_TXTReplace,
-    "YUAN_TXTShotReplace": YUAN_TXTShotReplace,
     "YUAN_TXTParagraphSplitter": YUAN_TXTParagraphSplitter,
     "YUAN_TXTLength": YUAN_TXTLength,
     "YUAN_TXTShotDurations": YUAN_TXTShotDurations,
@@ -1630,11 +1581,11 @@ NODE_CLASS_MAPPINGS = {
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "YUAN_TXTJsonExtractor": "JSON提取",
+    "YUAN_TXTJsonSwitch": "JSON提取开关",
     "YUAN_TXTAppearanceOrder": "出场排序",
     "YUAN_TXTConvertAny": "格式转换",
     "YUAN_TXTListNumber": "列表编号",
     "YUAN_TXTReplace": "文本批量替换",
-    "YUAN_TXTShotReplace": "分镜角色替换",
     "YUAN_TXTParagraphSplitter": "文本处理",
     "YUAN_TXTLength": "长度",
     "YUAN_TXTShotDurations": "分段时间提取",

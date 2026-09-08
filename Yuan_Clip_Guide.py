@@ -394,7 +394,7 @@ class YuanClipGuide:
                 }),
                 "MSR_LORA": (["auto", "MSR2.5", "MSR2.3"], {
                     "default": "auto",
-                    "tooltip": "MSR 适配模式：auto 按 LoRA 元数据自动检测（V1 触发、V2/普通不触发）；MSR2.5（LTX-2.5-Licon-MSR-V1）强制 MSR 适配（负偏移+槽位嵌入）；MSR2.3（LTX-2.3-Licon-MSR-V2）强制普通模式（正帧，无嵌入）。"
+                    "tooltip": "MSR 适配：auto 按 LoRA 元数据自动检测；MSR2.5 强制 MSR（负偏移+槽位嵌入）；MSR2.3 普通（正帧无嵌入）。"
                 }),
             },
         }

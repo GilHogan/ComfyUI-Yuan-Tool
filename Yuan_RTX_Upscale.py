@@ -143,7 +143,7 @@ class YuanRTXVideoUpscaleH3:
     )
     FUNCTION = "upscale"
     DESCRIPTION = (
-        "RTX 视频放大 (H3)：合并 RTX 视频超分辨率 + AV Decode Split + PT H3 Concat AV Latent 三者为一体。\n"
+        "RTX 视频放大 (H3)：RTX 超分辨 + AV 解码/重编码合并。\n"
         "支持图像直连放大，或接入 MiniMax H3 联合 AV latent（自动解码放大后重新合并音频）。\n"
         "依赖：pip install nvidia-vfx（需 NVIDIA RTX 显卡）。"
     )

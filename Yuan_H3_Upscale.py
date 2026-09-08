@@ -352,7 +352,7 @@ class Yuan_H3Upscale3D:
             "required": {
                 "latent": ("LATENT", {
                     "display_name": "潜空间",
-                    "tooltip": "Minimax H3 latent，可为纯视频 latent (B,C,T,H,W) 或含音频流的联合 AV latent（NestedTensor）。",
+                    "tooltip": "Minimax H3 latent，可为纯视频 (B,C,T,H,W) 或联合 AV latent（NestedTensor，含音频流）。",
                 }),
                 "model_name": (scan_models(), {
                     "display_name": "放大模型",
@@ -366,17 +366,17 @@ class Yuan_H3Upscale3D:
                 "scale": ("FLOAT", {
                     "default": 2.0, "min": 1.0, "max": 4.0, "step": 0.1,
                     "display_name": "放大倍数",
-                    "tooltip": "空间放大倍数（1.0~4.0）。1.0 原样返回；小于 1.0 会报错（仅支持放大）。仅在「按倍数缩放」模式下生效。",
+                    "tooltip": "空间放大倍数（1.0~4.0）。1.0 原样返回；小于 1.0 会报错（仅支持放大）。结果尺寸归到最近的偶数 latent（像素对齐 32 的倍数）。仅在「按倍数缩放」模式下生效。",
                 }),
                 "width": ("INT", {
                     "default": 1920, "min": 64, "max": 8192, "step": 8,
                     "display_name": "目标宽度",
-                    "tooltip": "目标宽度（像素），自动对齐到 16 的倍数。仅支持放大：目标小于当前尺寸会报错。仅在「目标尺寸」模式下生效。",
+                    "tooltip": "目标宽度（像素），自动对齐到 32 的倍数（latent 偶数），可安全送入 H3 二采。仅支持放大：目标小于当前尺寸会报错。仅在「目标尺寸」模式下生效。",
                 }),
                 "height": ("INT", {
                     "default": 1080, "min": 64, "max": 8192, "step": 8,
                     "display_name": "目标高度",
-                    "tooltip": "目标高度（像素），自动对齐到 16 的倍数。仅支持放大：目标小于当前尺寸会报错。仅在「目标尺寸」模式下生效。",
+                    "tooltip": "目标高度（像素），自动对齐到 32 的倍数（latent 偶数），可安全送入 H3 二采。仅支持放大：目标小于当前尺寸会报错。仅在「目标尺寸」模式下生效。",
                 }),
             }
         }
@@ -386,11 +386,9 @@ class Yuan_H3Upscale3D:
     OUTPUT_TOOLTIPS = ("放大后的 H3 latent，可直接送 VAE 解码或二次采样重绘。",)
     FUNCTION = "run"
     CATEGORY = "Yuan Tool/放大"
-    DESCRIPTION = ("H3 放大：在 latent 空间用训练好的神经网络放大 Minimax H3 视频，"
-                   "跳过「解码→像素放大→再编码」的慢速往返。纯 3D 卷积主干，"
-                   "联合处理时空体、时间一致性更强。支持按倍数缩放或目标尺寸两种"
-                   "缩放方式，仅支持放大（scale ≥ 1.0 或目标 ≥ 当前尺寸）。"
-                   "设备（优先 CUDA）与推理精度（跟随模型权重）均自动检测。")
+    DESCRIPTION = ("H3 放大：在 latent 空间用神经网络放大 Minimax H3 视频，跳过"
+                   "「解码→放大→再编码」往返。纯 3D 卷积，时空一致性更好；"
+                   "仅支持放大（scale ≥ 1.0 或目标 ≥ 当前尺寸）。")
 
     def run(self, latent, model_name, resize_type, scale, width, height):
         if model_name.startswith('('):
@@ -420,12 +418,19 @@ class Yuan_H3Upscale3D:
                 return (latent,)
             if scale < 1.0:
                 raise ValueError("仅支持放大 (scale >= 1.0)")
-            target_size = (cur_t, int(round(cur_h * scale)), int(round(cur_w * scale)))
-            eff_scale = float(scale)
+            # 归到最近的偶数 latent（等价像素对齐 32 的倍数），保证结果可安全
+            # 送入 H3 采样器做 2×2 patch 化；偶数输入下结果不会小于当前尺寸
+            t_h = max(2, int(round(cur_h * scale / 2.0)) * 2)
+            t_w = max(2, int(round(cur_w * scale / 2.0)) * 2)
+            if t_h == cur_h and t_w == cur_w:
+                return (latent,)
+            target_size = (cur_t, t_h, t_w)
+            # 嵌入需要单一缩放标量：取两个轴向实际比值的平均作为整体缩放提示
+            eff_scale = (t_h / cur_h + t_w / cur_w) / 2.0
         else:
-            # 目标尺寸（像素）对齐到 16 的倍数 → latent 尺寸
-            t_w = max(16, round(int(width) / 16) * 16) // 16
-            t_h = max(16, round(int(height) / 16) * 16) // 16
+            # 目标尺寸（像素）对齐到 32 的倍数 → latent 尺寸（偶数）
+            t_w = max(2, round(int(width) / 32.0) * 32) // 16
+            t_h = max(2, round(int(height) / 32.0) * 32) // 16
             if t_h < cur_h or t_w < cur_w:
                 raise ValueError(
                     f"目标尺寸小于当前尺寸，仅支持放大（当前 latent {cur_w}x{cur_h}，"
