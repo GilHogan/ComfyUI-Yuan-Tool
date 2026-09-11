@@ -50,6 +50,7 @@ git clone https://github.com/yuan-SiO2/ComfyUI-Yuan-Tool.git
 | **JSON提取** | 从剧本 JSON 提取整体风格、档案（角色/音色/道具/场景）、分镜序列（内置分镜角色替换：名称→`<Picture N>`、说话者→`<Picture N><Audio M>`，开头前置 retention\_analysis 定义块，武戏不加编号，BGM 可关闭）、角色/音色/道具/场景索引、场景判断；七个选项开关（角色/音色/道具/场景/BGM/情节输出、台词保护）聚合为「开关配置」可选端口，由「JSON提取开关」子节点接入，未接入时按默认值执行（除情节输出默认整合格式外，其余默认开启） |
 | **JSON提取开关** | 「JSON提取」的选项开关子节点：集中提供 角色/音色/道具/场景/BGM/情节输出 与 台词保护 七个开关，聚合为单个「开关配置」端口输出，接「JSON提取」的同名可选端口一次性控制；未接入子节点时 JSON提取 按默认值执行 |
 | **分段时间提取** | 从分镜策划 JSON 的「分镜情节」按编号 1-N 顺序提取各分镜「类型」时长：时长列表（逗号分隔，可直接接 Yuan 加载音频分段时长）、时长序列（列表）、分镜数量、总时长                              |
+| **预览内容**   | 预览/编辑任意内容（输出节点）：预览模式只读展示上游内容（JSON 序列化），编辑模式直接输出文本字符串                                              |
 
 ### 音频（Yuan Tool/音频）
 
@@ -57,6 +58,7 @@ git clone https://github.com/yuan-SiO2/ComfyUI-Yuan-Tool.git
 | ------------- | ------------------------------------------------------- |
 | **Yuan 音频列表** | 从 input 加载/上传音频（上限 30，支持视频提取音轨），按逗号索引输出 AUDIO 列表；留空输出全部 |
 | **Yuan 音频分流** | 按索引顺序将音频列表分配到多个输出端口（输出数量 2\~30），不足输出 1ms 静音             |
+| **Yuan 加载音频** | 内置播放器与时间轴裁剪：自定义裁切按起止时间截取；智能分段按「分段时长」切分并用「分段索引」选择输出；输出音频/时长/分段总数 |
 
 ### 选项（Yuan Tool/选项）
 
@@ -79,6 +81,7 @@ git clone https://github.com/yuan-SiO2/ComfyUI-Yuan-Tool.git
 | **MiniMax-H3 视频生成** | 调用 H3 生成视频+音频联合潜空间，输出正向条件与 AV 潜空间接采样器；支持图生视频（首/尾帧锚点）、参考图生视频（多路参考）、数字人三种模式                                 |
 | **H3 运动上下文**        | 取上一片段尾部连续帧作为不可去噪条件行，画面/声音直接从上一片段潜空间切片，实现无缝衔接；输出裁剪帧数「状态:长度」字符串；上下文潜空间可选，未连接时本地自动加载（存储位置随裁剪节点同步，片段 0 首片段直通） |
 | **H3 运动裁剪**         | 在 H3 AV 潜空间两段式裁切：头部按裁剪帧数整段裁掉（音视频共用切点、吸附 VRF 组边界），尾部按「保存到本地」保存一段供下一片段衔接                                    |
+| **H3 渐进式采样器**      | 先在空间降采样的 latent 上跑前段采样步，把干净端点提升到目标分辨率并在过渡 sigma 处重新加噪，再以全分辨率跑完剩余调度；仅使用正条件、不做 CFG；过渡点可选像素-VAE 锚点修正抑制提升伪影；可选高分辨率分块与 Sigma 加密（来源见鸣谢 SelfLift） |
 
 ### CLIP（Yuan Tool/CLIP）
 
@@ -103,6 +106,8 @@ git clone https://github.com/yuan-SiO2/ComfyUI-Yuan-Tool.git
 - **输出**：模型、正向条件、视频/音频潜空间、引导数据、运动引导数据、帧率、音频；其中引导数据接「Yuan 引导注入」，帧率/音频接 H3 视频生成。
 
 ## 更新记录
+
+- **2026-09-11**：补录遗漏节点：「H3 渐进式采样器」（采样来源见鸣谢 SelfLift）、「Yuan 加载音频」、「预览内容」；鸣谢新增 facok/comfyui-SelfLift。
 
 - **2026-09-06**：「分镜角色替换」并入「JSON提取」节点（分镜序列端口直接输出替换后文本，内置台词保护/音色输出开关，新增音色索引输出（位于角色与道具索引之间），移除角色道具场景输出端口；独立节点删除）；分镜序列开头（detailed\_description: 之前）前置 retention\_analysis 定义块（原「角色道具场景」端口输出内容，情节模式下前置档案描述纯文本）；新增「JSON提取开关」子节点（七个选项开关聚合为单个「开关配置」端口输出，接「JSON提取」的同名可选端口，未接入时按默认值执行：除情节输出默认整合格式外其余默认开启）。
 
@@ -141,6 +146,8 @@ git clone https://github.com/yuan-SiO2/ComfyUI-Yuan-Tool.git
 - [NikoDemon80/ComfyUI-H3-Motion-Context](https://github.com/NikoDemon80/ComfyUI-H3-Motion-Context)
 
 - [LBH-123-AI/Comfyui\_Minimax\_h3\_latent\_Upscaler](https://github.com/LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler)
+
+- [facok/comfyui-SelfLift](https://github.com/facok/comfyui-SelfLift)
 
 - [comfyanonymous/ComfyUI](https://github.com/comfyanonymous/ComfyUI)
 
