@@ -220,7 +220,7 @@ function registerYuanTool(nodeType, portMeta) {
     };
 }
 
-// ---------- Yuan_MiniMaxH3Video：模式切换 + 递进显示动态端口（常量对齐后端 MiniMax_H3.py） ----------
+// ---------- Yuan_MiniMaxH3Video：模式切换 + 递进显示动态端口（常量对齐后端 Minimax/MiniMax_H3.py） ----------
 const MINIMAX_MODE_REF = "参考图生视频";
 const MINIMAX_MODE_GUIDE = "数字人";
 
