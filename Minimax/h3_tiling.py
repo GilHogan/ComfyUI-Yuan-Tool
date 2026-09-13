@@ -59,8 +59,9 @@ def _tile_payload(payload, context, video, audio, axis, start, end):
             keyframes.append({**keyframe, "latent": comfy.ldm.common_dit.pad_to_patch_size(
                 region, (1, 2, 2)).contiguous()})
         tiled["keyframes"] = keyframes
-        if not payload.get("refs"):
-            tiled["cond_video_latents"] = [keyframe["latent"] for keyframe in keyframes]
+        # 参考条件不参与裁切，其行数由自身尺寸决定、不随分块变化，直接沿用
+        tiled["cond_video_latents"] = [keyframe["latent"] for keyframe in keyframes] + [
+            ref["latent"] for ref in (payload.get("refs") or []) if "latent" in ref]
     tile_height = end - start if axis == 3 else height
     tile_width = end - start if axis == 4 else width
     layout = _packed_layout((context.shape[1], video.shape[2], (tile_height + 1) // 2 * 2,
