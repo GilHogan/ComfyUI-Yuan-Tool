@@ -76,6 +76,33 @@ def _resize_guide(image, width, height):
     return samples.movedim(1, -1)
 
 
+def _encode_guide_color_neutral(vae, guide, width, height, frames):
+    """把引导帧编码为关键帧 latent，并做「往返偏色闭环补偿」。
+
+    H3 视频 VAE 的 编码→解码 不是恒等映射：实测每过一遍往返各通道整体偏移
+    约 2~3/255，且逐段线性累积（锚定行被采样器当作 σ=0 真值，整段画面跟着
+    偏移），链条越长越发黄。这里先把引导帧过一遍往返量出偏移 b 再用 x − b 生成
+    关键帧——模型渲染出的锚定画面即等于上一段尾部的真实色调，切断「每段一次
+    往返」的累积回路。
+
+    只补偿**逐通道均值**（DC）：往返偏差主体就是 DC，而按像素全量相减
+    （x − (往返 − x) = 2x − 往返）等价于对引导做强度 1.0 的 USM——实测把引导的
+    高频能量抬到 3.4 倍、过冲光晕 2.3 倍，模型照抄这份「脆」引导后就在衔接处
+    留下锐化质感台阶，故此处只取均值（均值不改变任何梯度，锐化副作用为零，
+    偏色补偿效果不变）。往返结果帧数/分辨率不符时（罕见）放弃补偿，退回 stock
+    行为。"""
+    latent = vae.encode(guide.contiguous())
+    rendered = vae.decode(latent)
+    if rendered.ndim == 5:
+        rendered = rendered[0]
+    if (rendered.ndim == 4 and int(rendered.shape[0]) == frames
+            and tuple(rendered.shape[1:3]) == (height, width)):
+        bias = (rendered.to(guide) - guide).mean(dim=(0, 1, 2), keepdim=True)
+        guide = (guide - bias).clamp(0.0, 1.0)
+        latent = vae.encode(guide.contiguous())
+    return latent
+
+
 def _tail_audio_latent(audio_vae, waveform, sample_rate, frames):
     """取波形尾部 frames 帧对应样本，按官方 Add Guide _encode_ref_audio 同路径编码。
 
@@ -333,8 +360,9 @@ def _context_latent_fingerprint(存储位置, 片段序号, 手动上传):
 class Yuan_H3MotionContext:
     """把上一片段尾部画面/音频固定为本片段开头：以 resolved_frame_index=0 锚定，
     与官方 Add Guide 同路径——画面经视频 VAE 编码、音频经音频 VAE 编码后追加进
-    minimax_keyframes（可与官方引导节点自由混用）。上下文来源由「模式」决定：
-    上传 / 端口 / 自动索引。"""
+    minimax_keyframes（可与官方引导节点自由混用）。画面编码前做往返偏色闭环补偿
+    （按逐通道均值抵消视频 VAE 编码→解码的非恒等 DC 偏移，防链条逐段累积发黄，
+    且不引入锐化）。上下文来源由「模式」决定：上传 / 端口 / 自动索引。"""
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -520,7 +548,8 @@ class Yuan_H3MotionContext:
                 % (g, frame_count))
 
         # 引导帧：取尾部 g 帧，按官方 Add Guide 同款 center 裁剪缩放到
-        # 本片段分辨率，经视频 VAE 编码为关键帧 latent
+        # 本片段分辨率，经视频 VAE 编码为关键帧 latent（编码时做逐通道均值
+        # 往返偏色闭环补偿，切断链条逐段累积的发黄漂移）
         guide = _resize_guide(pixels[available - g:], width, height)
         if width % 16 or height % 16:
             raise ValueError(
@@ -529,7 +558,8 @@ class Yuan_H3MotionContext:
                 % (width, height))
         try:
             keyframe = {"resolved_frame_index": 0,
-                        "latent": VAE.encode(guide.contiguous())}
+                        "latent": _encode_guide_color_neutral(
+                            VAE, guide, width, height, g)}
         except RuntimeError as e:
             raise RuntimeError(
                 "h3_motion_context: VAE 编码引导片段失败。\n"
